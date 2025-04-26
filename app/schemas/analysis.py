@@ -1,6 +1,7 @@
 from pydantic import BaseModel, HttpUrl
 from typing import List, Optional
 from datetime import datetime
+from app.core.constants import AnalysisStatus as AnalysisStatusConstants
 
 class AnalyzeRequest(BaseModel):
     url: HttpUrl
@@ -34,7 +35,7 @@ class AnalysisResult(BaseModel):
 
 class AnalysisStatus(BaseModel):
     job_id: str
-    status: str  # "pending", "processing", "completed", "failed"
+    status: str  # Use values from AnalysisStatusConstants
     progress: Optional[float] = None
     result: Optional[AnalysisResult] = None
     
@@ -42,7 +43,7 @@ class AnalysisStatus(BaseModel):
         json_schema_extra = {
             "example": {
                 "job_id": "abc123",
-                "status": "processing",
+                "status": AnalysisStatusConstants.PROCESSING,
                 "progress": 0.75,
                 "result": None
             }

@@ -26,7 +26,7 @@ async def get_my_info(user=Depends(get_current_user)):
         user_data = await UserService.create_user_if_not_exists(
             user_id=user["uid"],
             email=email,
-            display_name=name
+            username=name
         )
     
     return user_data
@@ -39,12 +39,12 @@ async def promote_user(user=Depends(get_current_user)):
     decoded_token = user.get("decoded_token", {})
     email = decoded_token.get("email", "")
     email = None if not email or email == "" else email
-    name = decoded_token.get("name", "")
+    username = decoded_token.get("username", "")
     
     user_data = await UserService.promote_user(
         user_id=user["uid"],
         email=email,
-        display_name=name
+        username=username
     )
     
     if not user_data:

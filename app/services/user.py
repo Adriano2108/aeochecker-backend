@@ -2,6 +2,7 @@ from typing import Dict, Any, Optional, List
 from app.core.firebase import db, firebase_auth
 from firebase_admin import firestore
 from datetime import datetime
+from app.core.constants import UserCredits, UserTypes
 
 class UserService:
     """Service for user data management"""
@@ -44,21 +45,28 @@ class UserService:
         return result
 
     @staticmethod
-    async def create_user_if_not_exists(user_id: str, email: str, display_name: Optional[str] = None) -> Dict[str, Any]:
+    async def create_user_if_not_exists(user_id: str, email: str, username: Optional[str] = None) -> Dict[str, Any]:
         """
         Create a new user record in Firestore if it doesn't exist
         """
+
         user_ref = db.collection("users").document(user_id)
         user_doc = user_ref.get()
         
         if not user_doc.exists:
             current_time = datetime.now()
+
+            user_type = UserTypes.PERSISTENT if email else UserTypes.ANONYMOUS
+            user_credits = UserCredits.PERSISTENT_USER if email else UserCredits.ANONYMOUS_USER
             email_value = None if not email or email == "" else email
+            username_value = username or (email.split("@")[0] if email else f"User_{user_id[:6]}")
+            
             user_data = {
                 "uid": user_id,
                 "email": email_value,
-                "display_name": display_name or (email.split("@")[0] if email else f"User_{user_id[:6]}"),
-                "credits": 3,
+                "username": username_value,
+                "credits": user_credits,
+                "user_type": user_type,
                 "created_at": current_time,
                 "reports": []
             }
@@ -79,14 +87,14 @@ class UserService:
         return user_data 
 
     @staticmethod
-    async def promote_user(user_id: str, email: Optional[str] = None, display_name: Optional[str] = None) -> Dict[str, Any]:
+    async def promote_user(user_id: str, email: Optional[str] = None, username: Optional[str] = None) -> Dict[str, Any]:
         """
         Promote a user from anonymous to persistent authentication
         
         Updates:
         - Sets persistent field to true
-        - Updates email and display_name if provided
-        - Sets credits to 5
+        - Updates email and username if provided
+        - Sets credits to persistent user credits value
         """
         user_ref = db.collection("users").document(user_id)
         user_doc = user_ref.get()
@@ -96,14 +104,14 @@ class UserService:
         
         update_data = {
             "persistent": True,
-            "credits": 5
+            "credits": UserCredits.PERSISTENT_USER
         }
         
         if email is not None and email != "":
             update_data["email"] = email
             
-        if display_name is not None and display_name != "":
-            update_data["display_name"] = display_name
+        if username is not None and username != "":
+            update_data["username"] = username
             
         user_ref.update(update_data)
         
