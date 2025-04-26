@@ -1,4 +1,4 @@
-# AEOChecker Backend
+# AEO Checker Backend
 
 A FastAPI backend for analyzing websites AEO. This API provides endpoints for website analysis report generation and user management.
 

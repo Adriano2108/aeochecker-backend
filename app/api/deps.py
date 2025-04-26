@@ -19,10 +19,6 @@ async def get_current_user(authorization: str = Header(...)):
         decoded_token = firebase_auth.verify_id_token(token)
         uid = decoded_token["uid"]
         
-        # You can fetch additional user info from Firestore if needed
-        # user_doc = db.collection("users").document(uid).get()
-        # user_data = user_doc.to_dict()
-        
         return {"uid": uid, "decoded_token": decoded_token}
     
     except InvalidIdTokenError:
