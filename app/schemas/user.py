@@ -13,6 +13,7 @@ class UserInDB(UserBase):
     created_at: datetime
     reports: Optional[List[str]] = []
     persistent: Optional[bool] = False
+    user_type: UserTypes
     
     class Config:
         json_schema_extra = {

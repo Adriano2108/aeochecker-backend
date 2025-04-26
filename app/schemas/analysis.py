@@ -1,21 +1,25 @@
-from pydantic import BaseModel, HttpUrl
+from pydantic import HttpUrl, Field
 from typing import List, Optional
 from datetime import datetime
-from app.core.constants import AnalysisStatus as AnalysisStatusConstants
+from app.core.constants import AnalysisStatus as AnalysisStatusConstants, AnalysisTagType
+from app.core.models import CamelCaseModel
 
-class AnalyzeRequest(BaseModel):
+class AnalyzeRequest(CamelCaseModel):
     url: HttpUrl
 
-class AnalysisTask(BaseModel):
+class AnalysisTask(CamelCaseModel):
     id: str
-    description: str
+    title: str
+    tag_type: AnalysisTagType
     result: str
     completed: bool
 
-class AnalysisResult(BaseModel):
+class AnalysisResult(CamelCaseModel):
     url: HttpUrl
     score: float
-    tasks: List[AnalysisTask]
+    title: str
+    analysis_synthesis: str
+    analysis_items: List[AnalysisTask]
     created_at: datetime
     
     class Config:
@@ -23,21 +27,22 @@ class AnalysisResult(BaseModel):
             "example": {
                 "url": "https://example.com",
                 "score": 85.5,
-                "tasks": [
-                    {"id": "task1", "description": "SEO Analysis", "result": "Good SEO practices found", "completed": True},
-                    {"id": "task2", "description": "Performance Check", "result": "Site loads quickly", "completed": True},
-                    {"id": "task3", "description": "Accessibility", "result": "Some accessibility issues found", "completed": True},
-                    {"id": "task4", "description": "Mobile Friendly", "result": "Site is mobile friendly", "completed": True}
+                "title": "Analysis Title",
+                "analysis_synthesis": "Analysis Synthesis",
+                "analysis_items": [
+                    {"id": "task1", "title": "SEO Analysis", "tag_type": "important", "result": "Good SEO practices found", "completed": True},
+                    {"id": "task2", "title": "Performance Check", "tag_type": "high_impact", "result": "Site loads quickly", "completed": True},
+                    {"id": "task3", "title": "Accessibility", "tag_type": "fixes", "result": "Some accessibility issues found", "completed": True},
+                    {"id": "task4", "title": "Mobile Friendly", "tag_type": "important", "result": "Site is mobile friendly", "completed": True}
                 ],
                 "created_at": "2023-07-10T14:23:56.123Z"
             }
         }
 
-class AnalysisStatus(BaseModel):
+class AnalysisStatus(CamelCaseModel):
     job_id: str
-    status: str  # Use values from AnalysisStatusConstants
+    status: AnalysisStatusConstants
     progress: Optional[float] = None
-    result: Optional[AnalysisResult] = None
     
     class Config:
         json_schema_extra = {
@@ -45,6 +50,5 @@ class AnalysisStatus(BaseModel):
                 "job_id": "abc123",
                 "status": AnalysisStatusConstants.PROCESSING,
                 "progress": 0.75,
-                "result": None
             }
         } 

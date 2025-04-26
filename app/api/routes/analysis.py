@@ -3,6 +3,7 @@ from app.schemas.analysis import AnalyzeRequest, AnalysisStatus, AnalysisResult
 from app.api.deps import get_current_user, check_user_credits
 from app.services.analysis import AnalysisService
 from typing import Dict, Any
+from app.core.constants import AnalysisStatus as AnalysisStatusConstants
 
 router = APIRouter(
     prefix="/analysis",
@@ -17,13 +18,16 @@ async def analyze_site(request: AnalyzeRequest, user_data=Depends(check_user_cre
     """
     user = user_data["user"]
     
-    # Start the analysis process
     result = await AnalysisService.analyze_website(
         url=str(request.url),
         user_id=user["uid"]
     )
     
-    return result
+    return {
+        "job_id": result.get("job_id"),
+        "status": result.get("status"),
+        "progress": result.get("progress", 0)
+    }
 
 @router.get("/status/{job_id}", response_model=AnalysisStatus)
 async def job_status(job_id: str, user=Depends(get_current_user)):
@@ -53,19 +57,19 @@ async def get_report(job_id: str, user=Depends(get_current_user)):
     """
     report_data = await AnalysisService.get_job_report(job_id, user["uid"])
     
-    if report_data.get("status") == "not_found":
+    if report_data.get("status") == AnalysisStatusConstants.NOT_FOUND:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Report not found"
         )
     
-    if report_data.get("status") == "forbidden":
+    if report_data.get("status") == AnalysisStatusConstants.FORBIDDEN:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="You don't have permission to access this report"
         )
     
-    if report_data.get("status") != "completed":
+    if report_data.get("status") != AnalysisStatusConstants.COMPLETED:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=f"Report is not ready yet. Current status: {report_data.get('status')}"

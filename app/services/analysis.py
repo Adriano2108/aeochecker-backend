@@ -1,10 +1,11 @@
 import uuid
 import httpx
 from bs4 import BeautifulSoup
-from typing import Dict, Any, List, Tuple
+from typing import Dict, Any, Tuple
 from datetime import datetime
 from app.core.firebase import db
 from firebase_admin import firestore
+from app.core.constants import AnalysisStatus as AnalysisStatusConstants
 
 class AnalysisService:
     """Service for analyzing websites and generating reports"""
@@ -134,47 +135,52 @@ class AnalysisService:
         job_ref.set({
             "url": url,
             "user_id": user_id,
-            "status": "processing",
+            "status": AnalysisStatusConstants.PROCESSING,
             "created_at": datetime.now(),
             "progress": 0
         })
         
         try:
             # Perform all analysis tasks
-            seo_score, seo_result = await cls.perform_seo_analysis(url)
+            # seo_score, seo_result = await cls.perform_seo_analysis(url)
+            seo_score, seo_result = 83, "SEO RESULT"
             job_ref.update({"progress": 0.25})
             
-            perf_score, perf_result = await cls.perform_performance_check(url)
+            # perf_score, perf_result = await cls.perform_performance_check(url)
+            perf_score, perf_result = 93, "PERFORMANCE RESULT"
             job_ref.update({"progress": 0.5})
-            
-            acc_score, acc_result = await cls.check_accessibility(url)
+
+            # acc_score, acc_result = await cls.check_accessibility(url)
+            acc_score, acc_result = 44, "ACCESSIBILITY RESULT"
             job_ref.update({"progress": 0.75})
             
-            mobile_score, mobile_result = await cls.check_mobile_friendly(url)
+            # mobile_score, mobile_result = await cls.check_mobile_friendly(url)
+            mobile_score, mobile_result = 58, "MOBILE RESULT"
+            job_ref.update({"progress": 1.0})
             
             # Calculate overall score (equal weights for simplicity)
             overall_score = (seo_score + perf_score + acc_score + mobile_score) / 4
             
             # Prepare the result object
-            tasks = [
-                {"id": "seo", "description": "SEO Analysis", "result": seo_result, "completed": True},
-                {"id": "performance", "description": "Performance Check", "result": perf_result, "completed": True},
-                {"id": "accessibility", "description": "Accessibility", "result": acc_result, "completed": True},
-                {"id": "mobile", "description": "Mobile Friendly", "result": mobile_result, "completed": True},
+            analysis_items = [
+                {"id": "seo", "title": "SEO Analysis", "tag_type": "important", "result": seo_result, "completed": True},
+                {"id": "performance", "title": "Performance Check", "tag_type": "high_impact", "result": perf_result, "completed": True},
+                {"id": "accessibility", "title": "Accessibility", "tag_type": "fixes", "result": acc_result, "completed": True},
+                {"id": "mobile", "title": "Mobile Friendly", "tag_type": "important", "result": mobile_result, "completed": True},
             ]
             
             result = {
                 "url": url,
                 "score": overall_score,
-                "tasks": tasks,
+                "title": "Analysis Title",
+                "analysis_synthesis": "Analysis Synthesis bla bla bla bla",
+                "analysis_items": analysis_items,
                 "created_at": datetime.now()
             }
             
-            # Update the job with the final result
             job_ref.update({
-                "status": "completed",
+                "status": AnalysisStatusConstants.COMPLETED,
                 "progress": 1.0,
-                "result": result,
                 "completed_at": datetime.now()
             })
             
@@ -186,16 +192,15 @@ class AnalysisService:
             report_ref = db.collection("users").document(user_id).collection("reports").document(job_id)
             report_ref.set(result)
             
-            return {"job_id": job_id, "status": "completed", "result": result}
+            return {"job_id": job_id, "status": "completed"}
             
         except Exception as e:
-            # Update job with error status
             job_ref.update({
-                "status": "failed",
+                "status": AnalysisStatusConstants.FAILED,
                 "error": str(e),
                 "completed_at": datetime.now()
             })
-            return {"job_id": job_id, "status": "failed", "error": str(e)}
+            return {"job_id": job_id, "status": AnalysisStatusConstants.FAILED, "error": str(e)}
     
     @staticmethod
     async def get_job_status(job_id: str, user_id: str) -> Dict[str, Any]:
@@ -206,13 +211,13 @@ class AnalysisService:
         job = job_ref.get()
         
         if not job.exists:
-            return {"status": "not_found"}
+            return {"status": AnalysisStatusConstants.NOT_FOUND}
         
         job_data = job.to_dict()
         
         # Check if the job belongs to the user
         if job_data.get("user_id") != user_id:
-            return {"status": "forbidden"}
+            return {"status": AnalysisStatusConstants.FORBIDDEN}
         
         return {
             "job_id": job_id,
@@ -229,23 +234,27 @@ class AnalysisService:
         job = job_ref.get()
         
         if not job.exists:
-            return {"status": "not_found"}
+            return {"status": AnalysisStatusConstants.NOT_FOUND}
         
         job_data = job.to_dict()
         
         # Check if the job belongs to the user
         if job_data.get("user_id") != user_id:
-            return {"status": "forbidden"}
+            return {"status": AnalysisStatusConstants.FORBIDDEN}
             
         # Check if job is completed
-        if job_data.get("status") != "completed":
+        if job_data.get("status") != AnalysisStatusConstants.COMPLETED:
             return {
                 "status": job_data.get("status"),
                 "progress": job_data.get("progress", 0)
             }
         
-        # Return the full result if job is completed
-        return {
-            "status": "completed",
-            "result": job_data.get("result")
-        } 
+        # Get the report from the user's reports collection
+        report_ref = db.collection("users").document(user_id).collection("reports").document(job_id)
+        report = report_ref.get()
+        
+        if not report.exists:
+            return {"status": AnalysisStatusConstants.NOT_FOUND}
+            
+        result = report.to_dict()
+        return {"status": AnalysisStatusConstants.COMPLETED, "result": result}

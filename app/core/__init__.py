@@ -1,5 +1,5 @@
 """
-Core module containing application settings and configurations
+Core modules for the application
 """
 
-from app.core import constants 
+from app.core import config, firebase, constants 
