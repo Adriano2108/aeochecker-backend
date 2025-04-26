@@ -1,5 +1,5 @@
 from typing import Dict, Any, Optional, List
-from app.core.firebase import db
+from app.core.firebase import db, firebase_auth
 from firebase_admin import firestore
 from datetime import datetime
 
@@ -116,3 +116,37 @@ class UserService:
             updated_user["email"] = None
             
         return updated_user 
+
+    @staticmethod
+    async def delete_user(user_id: str) -> bool:
+        """
+        Delete a user from both Firestore database and Firebase Auth
+        
+        1. Delete user document from Firestore
+        2. Delete any subcollections (reports, etc.)
+        3. Delete user from Firebase Auth
+        """
+        try:
+            # Check if user exists in Firestore
+            user_ref = db.collection("users").document(user_id)
+            user_doc = user_ref.get()
+            
+            if not user_doc.exists:
+                return False
+            
+            # Delete reports subcollection if it exists
+            reports_ref = user_ref.collection("reports")
+            reports = reports_ref.stream()
+            for report in reports:
+                report.reference.delete()
+            
+            # Delete the user document from Firestore
+            user_ref.delete()
+            
+            # Delete user from Firebase Auth
+            firebase_auth.delete_user(user_id)
+            
+            return True
+        except Exception as e:
+            print(f"Error deleting user {user_id}: {str(e)}")
+            return False 

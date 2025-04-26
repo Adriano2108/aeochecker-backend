@@ -62,3 +62,37 @@ async def get_my_reports(limit: int = 10, user=Depends(get_current_user)):
     """
     reports = await UserService.get_user_reports(user["uid"], limit=limit)
     return reports
+
+@router.delete("/{uid}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_specified_user(
+    uid: str, 
+    current_user=Depends(get_current_user)
+):
+    """
+    Delete user - used for cleanup after anonymous account upgrading
+    """
+    if uid == current_user["uid"]:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Cannot delete your own account."
+        )
+    
+    user_to_delete = await UserService.get_user_data(uid)
+    if not user_to_delete or user_to_delete.get("persistent", False):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Cannot delete this user. Only anonymous users can be deleted."
+        )
+    
+    #TODO: Add additional checks here:
+    # 1. Limit how many deletions a user can perform
+    # 2. Logic to check if this is suspicious or abusive deletion
+    
+    success = await UserService.delete_user(uid)
+    if not success:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Failed to delete user"
+        )
+    
+    return None
