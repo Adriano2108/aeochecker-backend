@@ -30,10 +30,10 @@ class AnalysisResult(CamelCaseModel):
                 "title": "Analysis Title",
                 "analysis_synthesis": "Analysis Synthesis",
                 "analysis_items": [
-                    {"id": "task1", "title": "SEO Analysis", "tag_type": "important", "result": "Good SEO practices found", "completed": True},
-                    {"id": "task2", "title": "Performance Check", "tag_type": "high_impact", "result": "Site loads quickly", "completed": True},
-                    {"id": "task3", "title": "Accessibility", "tag_type": "fixes", "result": "Some accessibility issues found", "completed": True},
-                    {"id": "task4", "title": "Mobile Friendly", "tag_type": "important", "result": "Site is mobile friendly", "completed": True}
+                    {"id": "task1", "title": "SEO Analysis", "tag_type": AnalysisTagType.IMPORTANT, "result": "Good SEO practices found", "completed": True},
+                    {"id": "task2", "title": "Performance Check", "tag_type": AnalysisTagType.HIGH, "result": "Site loads quickly", "completed": True},
+                    {"id": "task3", "title": "Accessibility", "tag_type": AnalysisTagType.FIXES, "result": "Some accessibility issues found", "completed": True},
+                    {"id": "task4", "title": "Mobile Friendly", "tag_type": AnalysisTagType.IMPORTANT, "result": "Site is mobile friendly", "completed": True}
                 ],
                 "created_at": "2023-07-10T14:23:56.123Z"
             }

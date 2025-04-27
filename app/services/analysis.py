@@ -5,7 +5,7 @@ from typing import Dict, Any, Tuple
 from datetime import datetime
 from app.core.firebase import db
 from firebase_admin import firestore
-from app.core.constants import AnalysisStatus as AnalysisStatusConstants
+from app.core.constants import AnalysisStatus as AnalysisStatusConstants, AnalysisTagType
 
 class AnalysisService:
     """Service for analyzing websites and generating reports"""
@@ -163,10 +163,10 @@ class AnalysisService:
             
             # Prepare the result object
             analysis_items = [
-                {"id": "seo", "title": "SEO Analysis", "tag_type": "important", "result": seo_result, "completed": True},
-                {"id": "performance", "title": "Performance Check", "tag_type": "high_impact", "result": perf_result, "completed": True},
-                {"id": "accessibility", "title": "Accessibility", "tag_type": "fixes", "result": acc_result, "completed": True},
-                {"id": "mobile", "title": "Mobile Friendly", "tag_type": "important", "result": mobile_result, "completed": True},
+                {"id": "seo", "title": "SEO Analysis", "tag_type": AnalysisTagType.IMPORTANT, "result": seo_result, "completed": True},
+                {"id": "performance", "title": "Performance Check", "tag_type": AnalysisTagType.HIGH, "result": perf_result, "completed": True},
+                {"id": "accessibility", "title": "Accessibility", "tag_type": AnalysisTagType.FIXES, "result": acc_result, "completed": True},
+                {"id": "mobile", "title": "Mobile Friendly", "tag_type": AnalysisTagType.IMPORTANT, "result": mobile_result, "completed": True},
             ]
             
             result = {

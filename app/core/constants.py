@@ -29,5 +29,5 @@ class AnalysisStatus(str, Enum):
 class AnalysisTagType(str, Enum):
     """Constants related to analysis tag type"""
     FIXES = "fixes"
-    HIGH_IMPACT = "high_impact"
+    HIGH = "high"
     IMPORTANT = "important"
