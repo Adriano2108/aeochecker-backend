@@ -1,9 +1,10 @@
-from pydantic import BaseModel, EmailStr
+from pydantic import EmailStr
 from typing import List, Optional
 from datetime import datetime
 from app.core.constants import UserCredits, UserTypes
+from app.core.models import CamelCaseModel
 
-class UserBase(BaseModel):
+class UserBase(CamelCaseModel):
     email: Optional[EmailStr] = None
     username: Optional[str] = None
 
