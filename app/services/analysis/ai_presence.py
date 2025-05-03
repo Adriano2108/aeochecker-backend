@@ -6,7 +6,7 @@ This module contains functionality to check how well large language models know 
 import httpx
 from bs4 import BeautifulSoup
 import json
-from typing import Dict, Any, Tuple
+from typing import Tuple
 import asyncio
 import re
 from urllib.parse import urljoin, urlparse
@@ -14,10 +14,7 @@ from urllib.parse import urljoin, urlparse
 from app.services.analysis.base import BaseAnalyzer
 from app.core.config import settings
 
-import openai
-from anthropic import AsyncAnthropic
-from google import genai
-from google.genai.types import Tool, GenerateContentConfig, GoogleSearch
+from app.services.analysis.llm_utils import query_openai, query_anthropic, query_gemini
 
 class AiPresenceAnalyzer(BaseAnalyzer):
     """Analyzer for checking AI presence of a company (how well AI models know about it)."""
@@ -163,17 +160,17 @@ class AiPresenceAnalyzer(BaseAnalyzer):
         tasks = []
         
         if settings.OPENAI_API_KEY:
-          tasks.append(AiPresenceAnalyzer._query_openai(prompt))
+          tasks.append(query_openai(prompt))
         else:
           responses["openai"] = "API key not configured"
             
         if settings.ANTHROPIC_API_KEY:
-          tasks.append(AiPresenceAnalyzer._query_anthropic(prompt))
+          tasks.append(query_anthropic(prompt))
         else:
           responses["anthropic"] = "API key not configured"
             
         if settings.GEMINI_API_KEY:
-          tasks.append(AiPresenceAnalyzer._query_gemini(prompt))
+          tasks.append(query_gemini(prompt))
         else:
           responses["gemini"] = "API key not configured"
         
@@ -194,61 +191,6 @@ class AiPresenceAnalyzer(BaseAnalyzer):
         
         return responses
     
-    @staticmethod
-    async def _query_openai(prompt: str) -> Tuple[str, str]:
-        """Query OpenAI API and return the response."""
-        client = openai.AsyncOpenAI(api_key=settings.OPENAI_API_KEY)
-        try:
-            response = await client.responses.create(
-                model="gpt-4.1-mini-2025-04-14",
-                tools=[{ 
-                  "type": "web_search_preview",
-                  "search_context_size": "low",
-                }],
-                input=prompt,
-            )
-            return "openai", response.output_text
-        except Exception as e:
-            raise Exception(f"OpenAI API error: {str(e)}")
-    
-    @staticmethod
-    async def _query_anthropic(prompt: str) -> Tuple[str, str]:
-        """Query Anthropic API and return the response."""
-        client = AsyncAnthropic(api_key=settings.ANTHROPIC_API_KEY)
-        try:
-            response = await client.messages.create(
-                model="claude-3-5-haiku-20241022",
-                max_tokens=150,
-                system="You are a helpful assistant that provides factual information about companies. Please do not invent facts, you are allowed to say you don't know.",
-                messages=[
-                    {"role": "user", "content": prompt}
-                ]
-            )
-            return "anthropic", response.content[0].text
-        except Exception as e:
-            raise Exception(f"Anthropic API error: {str(e)}")
-    
-    @staticmethod
-    async def _query_gemini(prompt: str) -> Tuple[str, str]:
-        """Query Google Gemini API and return the response."""
-        try:
-            client = genai.Client(api_key=settings.GEMINI_API_KEY)
-            google_search_tool = Tool(
-               google_search = GoogleSearch()
-            )
-            
-            response = client.models.generate_content(
-                model="gemini-2.0-flash",
-                contents=prompt,
-                config=GenerateContentConfig(
-                   tools=[google_search_tool],
-                   response_modalities=["TEXT"],
-                )
-            )
-            return "gemini", response.text
-        except Exception as e:
-            raise Exception(f"Gemini API error: {str(e)}")
-
     @staticmethod
     def _score_llm_response(company_facts: dict, response: str) -> Tuple[float, dict]:
         score = 0
@@ -325,7 +267,7 @@ class AiPresenceAnalyzer(BaseAnalyzer):
             print("0: No uncertainty phrase found in response.")
         return score, details
 
-    async def analyze(self, url: str) -> Tuple[float, str]:
+    async def analyze(self, url: str) -> Tuple[dict, float, str]:
         """
         Analyze AI presence of a company website.
         """
@@ -356,4 +298,4 @@ class AiPresenceAnalyzer(BaseAnalyzer):
             summary_parts.append(f"Gemini: {scores['gemini']}")
         summary_parts.append(f"Average: {avg_score:.2f}")
         summary = ", ".join(summary_parts)
-        return avg_score, summary 
+        return company_facts, avg_score, summary 

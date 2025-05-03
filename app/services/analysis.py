@@ -34,10 +34,10 @@ class AnalysisService:
             strategy_review_analyzer = StrategyReviewAnalyzer()
             
             # Run analyses
-            ai_presence_score, ai_presence_result = await ai_presence_analyzer.analyze(url)
+            company_facts, ai_presence_score, ai_presence_result = await ai_presence_analyzer.analyze(url)
             job_ref.update({"progress": 0.5})
 
-            competitor_landscape_score, competitor_landscape_result = await competitor_landscape_analyzer.analyze(url)
+            competitor_landscape_score, included, competitors = await competitor_landscape_analyzer.analyze(company_facts,url)
             job_ref.update({"progress": 0.75})
 
             strategy_review_score, strategy_review_result = await strategy_review_analyzer.analyze(url)
@@ -59,7 +59,7 @@ class AnalysisService:
                     "title": "Competitor Landscape",
                     "tag_type": AnalysisTagType.HIGH,
                     "score": competitor_landscape_score,
-                    "result": competitor_landscape_result,
+                    "result": competitors,
                     "completed": True
                 },
                 {
