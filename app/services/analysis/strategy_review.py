@@ -9,17 +9,28 @@ import httpx
 import json
 import re
 import asyncio
+from urllib.parse import urlparse, urlunparse, urljoin
 from app.services.analysis.base import BaseAnalyzer
-from app.services.analysis.llm_utils import query_openai, query_anthropic, query_gemini
-from app.core.config import settings
-from app.services.analysis.scrape_utils import scrape_website
+from langdetect import detect, LangDetectException
+from app.services.analysis.scrape_utils import ( check_robots_txt, get_potential_sitemap_urls, is_valid_sitemap )
 
 class StrategyReviewAnalyzer(BaseAnalyzer):
     """Analyzer for evaluating strategic positioning of a company."""
     
-    async def analyze(self, name: str, soup: BeautifulSoup = None, all_text: str = None) -> Tuple[float, Dict[str, Any]]:
+    async def analyze(self, name: str, url: str, soup: BeautifulSoup = None, all_text: str = None) -> Tuple[float, Dict[str, Any]]:
         """
         Analyze various aspects of a company's website.
+        
+        Args:
+            name: The name of the company
+            url: The URL of the company's website
+            soup: The BeautifulSoup object of the website (optional)
+            all_text: The extracted text content from the website (optional)
+            
+        Returns:
+            Tuple containing:
+            - score: A float score representing the overall strategic positioning
+            - results: A dictionary with detailed results of the analysis
         """
         strategy_review_result = {}
         
@@ -33,20 +44,17 @@ class StrategyReviewAnalyzer(BaseAnalyzer):
         structured_data_score, structured_data_results = self._analyze_structured_data(soup)
         
         # 4. Accessibility to AI Crawlers
-            # a. Is there a sitemap.xml?
-            # b. Is there a robots.txt?
-            # c. Is the content pre-rendered (LLM's don't index JS)
-            # d. Is the content in english? If not, is there an english version of the website found?
+        accessibility_score, accessibility_results = await self._analyze_crawler_accessibility(url, soup)
         
         strategy_review_result["answerability"] = answerability_results
         strategy_review_result["knowledge_base"] = kb_results
         strategy_review_result["structured_data"] = structured_data_results
+        strategy_review_result["ai_crawler_accessibility"] = accessibility_results
         
         # Calculate the overall score as the average of all component scores
-        score = (answerability_score + kb_score + structured_data_score) / 3
+        score = (answerability_score + kb_score + structured_data_score + accessibility_score) / 4
         
         return score, strategy_review_result
-    
     
     def _calculate_structured_data_score(self, results: Dict[str, Any]) -> float:
         """Calculate a score for structured data implementation quality."""
@@ -294,7 +302,7 @@ class StrategyReviewAnalyzer(BaseAnalyzer):
         
         return results["score"], results
     
-    def _analyze_content_answerability(self, all_text: str, soup: BeautifulSoup = None) -> Tuple[float, Dict[str, Any]]:
+    async def _analyze_content_answerability(self, all_text: str, soup: BeautifulSoup = None) -> Tuple[float, Dict[str, Any]]:
         """
         Analyze the content answerability of a website.
         """
@@ -414,3 +422,148 @@ class StrategyReviewAnalyzer(BaseAnalyzer):
         final_score = min(100.0, raw_score)
         
         return final_score
+
+    async def _analyze_crawler_accessibility(self, url: str, soup: BeautifulSoup) -> Tuple[float, Dict[str, Any]]:
+        """
+        Checks website accessibility for AI crawlers based on URL and soup.
+
+        Args:
+            url: The original URL of the website.
+            soup: The BeautifulSoup object of the fetched HTML content.
+
+        Returns:
+            A dictionary containing accessibility checks:
+            {
+                "sitemap_found": bool,
+                "robots_txt_found": bool,
+                "pre_rendered_content": bool,
+                },
+                "pre_rendered_content": {
+                    "likely_pre_rendered": bool, # Heuristic assessment
+                    "text_length": int,
+                    "js_framework_hint": bool # Indication if common JS frameworks detected
+                },
+                "language": {
+                    "detected_language": str | None,
+                    "is_english": bool | None,
+                    "english_version_url": str | None # Found via hreflang
+                },
+                "score": float # 0-100 score based on the checks
+            }
+        """
+
+        results = {
+            "sitemap_found": False,
+            "robots_txt_found": False,
+            "pre_rendered_content": {
+                "likely_pre_rendered": False,
+                "text_length": 0,
+                "js_framework_hint": False
+            },
+            "language": {
+                "detected_language": None,
+                "is_english": None,
+                "english_version_url": None
+            },
+            "score": 0.0
+        }
+
+        # --- Prepare Base URL ---
+        parsed_url = urlparse(url)
+        base_url = urlunparse((parsed_url.scheme, parsed_url.netloc, '', '', '', ''))
+        if not base_url:
+            print("Warning: Could not determine base URL.")
+            return 0.0, results  # Cannot proceed with reliable checks
+
+        # --- Check for robots.txt ---
+        robots_found, _ = await check_robots_txt(url)
+        results["robots_txt_found"] = robots_found
+
+        # --- Check for sitemaps ---
+        potential_sitemap_urls = await get_potential_sitemap_urls(url)
+        
+        # Check if any sitemap URL is actually a valid sitemap
+        for s_url in potential_sitemap_urls:
+            if await is_valid_sitemap(s_url):
+                results["sitemap_found"] = True
+                break
+
+        # --- Check for Pre-rendered Content (Heuristic) ---
+        body_text = ""
+        if soup.body:
+            # Remove script and style content before getting text
+            for element in soup.body(["script", "style", "noscript"]):
+                element.decompose()
+            body_text = soup.body.get_text(separator=' ', strip=True)
+
+        results["pre_rendered_content"]["text_length"] = len(body_text)
+
+        # Heuristic: If body text length is reasonably long, assume some pre-rendering
+        MIN_TEXT_LENGTH_THRESHOLD = 500
+        if len(body_text) > MIN_TEXT_LENGTH_THRESHOLD:
+            results["pre_rendered_content"]["likely_pre_rendered"] = True
+        else:
+            # Check for JS framework hints as another indicator
+            scripts = soup.find_all('script', src=True)
+            js_framework_patterns = re.compile(r'(react|angular|vue|next|nuxt|svelte)', re.IGNORECASE)
+            for script in scripts:
+                if script.get('src') and js_framework_patterns.search(script['src']):
+                    results["pre_rendered_content"]["js_framework_hint"] = True
+                    break  # Found one hint, that's enough
+
+        # --- Check Language and English Version ---
+        if body_text:  # Only detect if there is text
+            try:
+                # Use a sample for potentially very long text to speed up detection
+                sample_text = body_text[:2000] if len(body_text) > 2000 else body_text
+                lang = detect(sample_text)
+                results["language"]["detected_language"] = lang
+                results["language"]["is_english"] = (lang == 'en')
+
+                if lang != 'en':
+                    # Look for <link rel="alternate" hreflang="en" href="...">
+                    alternate_links = soup.select('link[rel="alternate"][hreflang="en"]')
+                    if alternate_links:
+                        en_url = alternate_links[0].get('href')
+                        if en_url:
+                            # Resolve relative URLs
+                            absolute_en_url = urljoin(base_url, en_url)
+                            results["language"]["english_version_url"] = absolute_en_url
+            except LangDetectException:
+                print("Warning: Could not reliably detect language.")
+            except Exception as e:
+                print(f"Warning: An error occurred during language detection: {e}")
+
+        # Calculate the score for crawler accessibility
+        score = self._calculate_crawler_accessibility_score(results)
+        results["score"] = score
+
+        return score, results
+
+    def _calculate_crawler_accessibility_score(self, results: Dict[str, Any]) -> float:
+        """Calculate a score from 0-100 for crawler accessibility."""
+        score = 0.0
+        
+        # 1. Sitemap availability (25 points)
+        if results["sitemap_found"]:
+            score += 25.0
+        
+        # 2. Robots.txt availability (15 points)
+        if results["robots_txt_found"]:
+            score += 15.0
+        
+        # 3. Pre-rendered content (30 points)
+        if results["pre_rendered_content"]["likely_pre_rendered"]:
+            score += 30.0
+        elif not results["pre_rendered_content"]["js_framework_hint"]:
+            # If no JS framework hint detected and reasonable text, give partial points
+            if results["pre_rendered_content"]["text_length"] > 200:
+                score += 15.0
+        
+        # 4. Language accessibility (30 points)
+        if results["language"]["is_english"] is True:
+            score += 30.0
+        elif results["language"]["english_version_url"]:
+            score += 20.0  # Partial credit for having an English version
+        
+        return min(100.0, score)

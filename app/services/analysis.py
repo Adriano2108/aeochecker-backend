@@ -1,15 +1,11 @@
 import uuid
-import httpx
-from bs4 import BeautifulSoup
-from typing import Dict, Any, Tuple
+from typing import Dict, Any
 from datetime import datetime
-import re
-from urllib.parse import urljoin, urlparse
 from app.core.firebase import db
 from firebase_admin import firestore
 from app.core.constants import AnalysisStatus as AnalysisStatusConstants, AnalysisTagType
 from app.services.analysis import AiPresenceAnalyzer, CompetitorLandscapeAnalyzer, StrategyReviewAnalyzer
-from app.services.analysis.scrape_utils import scrape_website, scrape_company_facts
+from app.services.analysis.scrape_utils import scrape_website, scrape_company_facts, _validate_and_get_best_url
 
 class AnalysisService:
     """Service for analyzing websites and generating reports"""
@@ -29,6 +25,14 @@ class AnalysisService:
             "created_at": datetime.now(),
             "progress": 0
         })
+
+        try:
+            validated_url = await _validate_and_get_best_url(url)
+            if validated_url != url:
+                url = validated_url
+        except Exception as e:
+            print(f"Error validating URL: {str(e)}")
+            return {"job_id": job_id, "status": AnalysisStatusConstants.FAILED, "error": str(e)}
         
         try:
             # Instantiate analyzers
@@ -52,7 +56,7 @@ class AnalysisService:
             competitor_landscape_score, competitors_result = await competitor_landscape_analyzer.analyze(company_facts)
             job_ref.update({"progress": 0.75})
 
-            strategy_review_score, strategy_review_result = await strategy_review_analyzer.analyze(company_facts["name"], soup, all_text)
+            strategy_review_score, strategy_review_result = await strategy_review_analyzer.analyze(company_facts["name"], url, soup, all_text)
             job_ref.update({"progress": 1.0})
             
             overall_score = (ai_presence_score + competitor_landscape_score + strategy_review_score) / 3
