@@ -26,13 +26,12 @@ class StrategyReviewAnalyzer(BaseAnalyzer):
         # 1. Content Answerability
         answerability_score, answerability_results = await self._analyze_content_answerability(all_text, soup)
         
-        # 2. Knowledge Base presence 
+        # 2. Knowledge Base Presence 
         kb_score, kb_results = await self._analyze_knowledge_base_presence(name)
         
-        # 3. Structured data Implementation
-            # a. Is there and Which schema markup there is?
-            # b. Mark FAQ, Articles, Review with schema
-            # c. Have correct HTML semantic
+        # 3. Structured Data Implementation
+        structured_data_score, structured_data_results = self._analyze_structured_data(soup)
+        
         # 4. Accessibility to AI Crawlers
             # a. Is there a sitemap.xml?
             # b. Is there a robots.txt?
@@ -41,11 +40,222 @@ class StrategyReviewAnalyzer(BaseAnalyzer):
         
         strategy_review_result["answerability"] = answerability_results
         strategy_review_result["knowledge_base"] = kb_results
+        strategy_review_result["structured_data"] = structured_data_results
         
         # Calculate the overall score as the average of all component scores
-        score = (answerability_score + kb_score) / 2
+        score = (answerability_score + kb_score + structured_data_score) / 3
         
         return score, strategy_review_result
+    
+    
+    def _calculate_structured_data_score(self, results: Dict[str, Any]) -> float:
+        """Calculate a score for structured data implementation quality."""
+        score = 0.0
+        
+        # 1. Schema markup presence (30 points max)
+        if results["schema_markup_present"]:
+            score += 15.0  # Basic presence
+            
+            # Additional points for variety of schemas
+            schema_count = len(results["schema_types_found"])
+            if schema_count >= 3:
+                score += 15.0
+            else:
+                score += schema_count * 5.0
+                
+        # 2. Specific important schemas (30 points max)
+        specific_schemas = results["specific_schemas"]
+        if specific_schemas["FAQPage"]:
+            score += 10.0
+        if specific_schemas["Article"]:
+            score += 10.0
+        if specific_schemas["Review"]:
+            score += 10.0
+            
+        # 3. Semantic HTML elements (40 points max)
+        semantic_elements = results["semantic_elements"]
+        if semantic_elements["present"]:
+            # Points for variety of semantic elements
+            unique_types_count = semantic_elements["count_unique_types"]
+            if unique_types_count >= 10:
+                score += 20.0
+            else:
+                score += unique_types_count * 2.0
+                
+            # Points for semantic ratio
+            ratio = semantic_elements["semantic_ratio"]
+            if ratio >= 0.6:  # 60% or more semantic tags
+                score += 20.0
+            elif ratio >= 0.4:  # 40-60% semantic tags
+                score += 15.0
+            elif ratio >= 0.2:  # 20-40% semantic tags
+                score += 10.0
+            else:
+                score += 5.0
+                
+        return min(100.0, score)
+    
+    def _analyze_structured_data(self, soup: BeautifulSoup) -> Dict[str, Any]:
+        """
+        Analyzes a BeautifulSoup object for structured data implementation and
+        HTML semantics.
+
+        Args:
+            soup: A BeautifulSoup object representing the parsed HTML page.
+
+        Returns:
+            A dictionary containing the analysis results:
+            {
+                "schema_markup_present": bool,
+                "schema_types_found": list[str],
+                "specific_schemas": {
+                    "FAQPage": bool,
+                    "Article": bool, # Includes subtypes like NewsArticle, BlogPosting
+                    "Review": bool   # Includes subtypes like AggregateRating
+                },
+                "semantic_elements": {
+                    "present": bool,
+                    "unique_types_found": list[str],
+                    "count_unique_types": int,
+                    "all_tags_count": int,
+                    "semantic_tags_count": int,
+                    "non_semantic_tags_count": int, # Primarily divs and spans
+                    "semantic_ratio": float # Ratio of semantic tags to total tags
+                }
+            }
+        """
+        results = {
+            "schema_markup_present": False,
+            "schema_types_found": [],
+            "specific_schemas": {
+                "FAQPage": False,
+                "Article": False,
+                "Review": False
+            },
+            "semantic_elements": {
+                "present": False,
+                "unique_types_found": [],
+                "count_unique_types": 0,
+                "all_tags_count": 0,
+                "semantic_tags_count": 0,
+                "non_semantic_tags_count": 0,
+                "semantic_ratio": 0.0
+            }
+        }
+        schema_types_set = set()
+
+        # 1. Check for JSON-LD (<script type="application/ld+json">) - Most common
+        json_ld_scripts = soup.find_all('script', type='application/ld+json')
+        for script in json_ld_scripts:
+            try:
+                # Ignore empty scripts
+                if script.string:
+                    data = json.loads(script.string)
+                    results["schema_markup_present"] = True
+
+                    # Data can be a single dictionary or a list of dictionaries
+                    items_to_check = []
+                    if isinstance(data, dict):
+                        items_to_check.append(data)
+                    elif isinstance(data, list):
+                        items_to_check.extend(data)
+
+                    for item in items_to_check:
+                        # Check if it's a dictionary and has a '@type'
+                        if isinstance(item, dict) and '@type' in item:
+                            schema_type = item['@type']
+                            # @type can be a string or a list of strings
+                            if isinstance(schema_type, str):
+                                schema_types_set.add(schema_type)
+                            elif isinstance(schema_type, list):
+                                schema_types_set.update(schema_type)  # Use update for lists
+
+            except json.JSONDecodeError:
+                print(f"Warning: Could not parse JSON-LD content: {script.string[:100]}...")
+            except Exception as e:
+                print(f"Warning: Error processing script tag: {e}")
+
+        # 2. Check for Microdata (itemscope, itemtype) - Less common now
+        microdata_items = soup.find_all(attrs={'itemscope': True})
+        if microdata_items:
+            results["schema_markup_present"] = True  # Mark as present if found
+            for item in microdata_items:
+                # Check if the element itself or a direct child has 'itemtype'
+                itemtype = item.get('itemtype')
+                if itemtype:
+                    # Extract the type (often the last part of the URL)
+                    schema_name = itemtype.split('/')[-1]
+                    schema_types_set.add(schema_name)
+
+        # 3. Check for RDFa (typeof) - Even less common for general schema
+        rdfa_items = soup.find_all(attrs={'typeof': True})
+        if rdfa_items:
+            results["schema_markup_present"] = True
+            for item in rdfa_items:
+                type_val = item.get('typeof')
+                if type_val:
+                    # RDFa types can be prefixed (e.g., schema:Article)
+                    # or just the name (e.g., Article)
+                    schema_name = type_val.split(':')[-1]  # Basic extraction
+                    schema_types_set.add(schema_name)
+
+        # Finalize schema types list
+        results["schema_types_found"] = sorted(list(schema_types_set))
+
+        # Check for specific schema types (case-insensitive check might be safer)
+        article_types = {"Article", "NewsArticle", "BlogPosting", "TechArticle", "Report"}  # Add more as needed
+        review_types = {"Review", "AggregateRating", "Rating", "Product"}  # Product often contains reviews/ratings
+
+        for schema_type in schema_types_set:
+            st_lower = schema_type.lower()
+            if st_lower == "faqpage":
+                results["specific_schemas"]["FAQPage"] = True
+            # Check against sets for broader matching
+            if schema_type in article_types or st_lower in {a.lower() for a in article_types}:
+                results["specific_schemas"]["Article"] = True
+            if schema_type in review_types or st_lower in {r.lower() for r in review_types}:
+                results["specific_schemas"]["Review"] = True
+
+        # --- 3c: HTML Semantics and Elements ---
+        semantic_tags_list = [
+            'header', 'footer', 'nav', 'main', 'article', 'aside', 'section',
+            'details', 'summary', 'figure', 'figcaption', 'time', 'mark',
+            'h1', 'h2', 'h3', 'h4', 'h5', 'h6',  # Headings have semantic meaning
+            'address', 'blockquote', 'cite', 'q', 'ul', 'ol', 'li', 'dl', 'dt', 'dd'  # Lists & definition lists
+        ]
+        non_semantic_tags = {'div', 'span'}  # Primary non-semantic containers
+
+        all_elements = soup.find_all(True)  # Get all tags
+        results["semantic_elements"]["all_tags_count"] = len(all_elements)
+
+        found_semantic_tag_names = set()
+        semantic_count = 0
+        non_semantic_count = 0
+
+        for element in all_elements:
+            tag_name = element.name.lower()
+            if tag_name in semantic_tags_list:
+                found_semantic_tag_names.add(tag_name)
+                semantic_count += 1
+            elif tag_name in non_semantic_tags:
+                non_semantic_count += 1
+
+        results["semantic_elements"]["present"] = bool(found_semantic_tag_names)
+        results["semantic_elements"]["unique_types_found"] = sorted(list(found_semantic_tag_names))
+        results["semantic_elements"]["count_unique_types"] = len(found_semantic_tag_names)
+        results["semantic_elements"]["semantic_tags_count"] = semantic_count
+        results["semantic_elements"]["non_semantic_tags_count"] = non_semantic_count
+
+        if results["semantic_elements"]["all_tags_count"] > 0:
+            # Calculate ratio based on semantic vs (semantic + non-semantic)
+            total_structural_tags = semantic_count + non_semantic_count
+            if total_structural_tags > 0:
+                results["semantic_elements"]["semantic_ratio"] = round(semantic_count / total_structural_tags, 3)
+
+        score = self._calculate_structured_data_score(results)
+        results["score"] = score
+        
+        return score, results
     
     async def _analyze_knowledge_base_presence(self, company_name: str) -> Tuple[float, Dict[str, Any]]:
         results = {
@@ -84,7 +294,7 @@ class StrategyReviewAnalyzer(BaseAnalyzer):
         
         return results["score"], results
     
-    async def _analyze_content_answerability(self, all_text: str, soup: BeautifulSoup = None) -> Tuple[float, Dict[str, Any]]:
+    def _analyze_content_answerability(self, all_text: str, soup: BeautifulSoup = None) -> Tuple[float, Dict[str, Any]]:
         """
         Analyze the content answerability of a website.
         """

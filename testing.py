@@ -24,9 +24,13 @@ async def main():
     soup, all_text = await scrape_website(url)
 
     # score, strategy_review_result = await strategy_review_analyzer.analyze(url, soup, all_text)
-    score, kb_results = await strategy_review_analyzer._analyze_knowledge_base_presence("Github")
-    print("Score:", score)
-    print("Strategy Review Result:", json.dumps(kb_results, indent=4))
+    # score, kb_results = await strategy_review_analyzer._analyze_knowledge_base_presence("Github")
+
+    # Test the structured data analysis
+    score, structured_data_results = strategy_review_analyzer._analyze_structured_data(soup)
+    print("Structured Data Score:", score)
+    print("Structured Data Results:", json.dumps(structured_data_results, indent=4))
+    
 
 if __name__ == "__main__":
     asyncio.run(main())
