@@ -2,8 +2,9 @@ import asyncio
 from app.services.analysis.competitor_landscape import CompetitorLandscapeAnalyzer
 from app.services.analysis.ai_presence import AiPresenceAnalyzer
 from app.services.analysis.strategy_review import StrategyReviewAnalyzer
+from app.services.analysis.utils.response import generate_analysis_synthesis
 import json
-from app.services.analysis.scrape_utils import scrape_website, _validate_and_get_best_url
+from app.services.analysis.utils.scrape_utils import scrape_website, _validate_and_get_best_url
 
 async def main():
     url = "https://pickpocketalert.com/"
@@ -22,15 +23,20 @@ async def main():
         'description': 'Stay safe from pickpockets around you with real-time alerts and community-driven advice.'
     }
 
-    soup, all_text = await scrape_website(validated_url)
+    # Test analysis synthesis function with different score ranges
+    test_scores = [5, 15, 25, 35, 45, 55, 65, 75, 85, 95]
+    for score in test_scores:
+        synthesis = generate_analysis_synthesis(dummy_company_facts["name"], score)
+        print(f"Score {score}: {synthesis}")
 
+    # Original test code
+    # soup, all_text = await scrape_website(validated_url)
     # accessibility_score, accessibility_results = await strategy_review_analyzer._analyze_crawler_accessibility(validated_url, soup)
     # print("Accessibility Score:", accessibility_score)
     # print("Accessibility Results:", json.dumps(accessibility_results, indent=4))
-
-    score, strategy_review_result = await strategy_review_analyzer.analyze(dummy_company_facts["name"], validated_url, soup, all_text)
-    print("Strategy Review Score:", score)
-    print("Strategy Review Results:", json.dumps(strategy_review_result, indent=4))
+    # score, strategy_review_result = await strategy_review_analyzer.analyze(dummy_company_facts["name"], validated_url, soup, all_text)
+    # print("Strategy Review Score:", score)
+    # print("Strategy Review Results:", json.dumps(strategy_review_result, indent=4))
 
 if __name__ == "__main__":
     asyncio.run(main())

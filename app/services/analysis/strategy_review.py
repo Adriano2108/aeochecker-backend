@@ -12,7 +12,7 @@ import asyncio
 from urllib.parse import urlparse, urlunparse, urljoin
 from app.services.analysis.base import BaseAnalyzer
 from langdetect import detect, LangDetectException
-from app.services.analysis.scrape_utils import ( check_robots_txt, get_potential_sitemap_urls, is_valid_sitemap )
+from app.services.analysis.utils.scrape_utils import ( check_robots_txt, get_potential_sitemap_urls, is_valid_sitemap )
 
 class StrategyReviewAnalyzer(BaseAnalyzer):
     """Analyzer for evaluating strategic positioning of a company."""

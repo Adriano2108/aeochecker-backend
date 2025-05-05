@@ -8,7 +8,7 @@ from app.core.config import settings
 import asyncio
 import ast
 import json
-from app.services.analysis.llm_utils import query_openai, query_anthropic, query_gemini
+from app.services.analysis.utils.llm_utils import query_openai, query_anthropic, query_gemini
 from collections import Counter
 import re
 

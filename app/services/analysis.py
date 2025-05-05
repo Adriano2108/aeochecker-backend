@@ -5,7 +5,8 @@ from app.core.firebase import db
 from firebase_admin import firestore
 from app.core.constants import AnalysisStatus as AnalysisStatusConstants, AnalysisTagType
 from app.services.analysis import AiPresenceAnalyzer, CompetitorLandscapeAnalyzer, StrategyReviewAnalyzer
-from app.services.analysis.scrape_utils import scrape_website, scrape_company_facts, _validate_and_get_best_url
+from app.services.analysis.utils.scrape_utils import scrape_website, scrape_company_facts, _validate_and_get_best_url
+from app.services.analysis.utils.response import generate_analysis_synthesis
 
 class AnalysisService:
     """Service for analyzing websites and generating reports"""
@@ -91,8 +92,8 @@ class AnalysisService:
             result = {
                 "url": url,
                 "score": overall_score,
-                "title": "Analysis Title",
-                "analysis_synthesis": "Analysis Synthesis bla bla bla bla",
+                "title": f"{company_facts['name']} Report",
+                "analysis_synthesis": generate_analysis_synthesis(company_facts['name'], overall_score * 100),
                 "analysis_items": analysis_items,
                 "created_at": datetime.now()
             }

@@ -13,7 +13,7 @@ from urllib.parse import urljoin, urlparse
 
 from app.services.analysis.base import BaseAnalyzer
 from app.core.config import settings
-from app.services.analysis.llm_utils import query_openai, query_anthropic, query_gemini
+from app.services.analysis.utils.llm_utils import query_openai, query_anthropic, query_gemini
 
 class AiPresenceAnalyzer(BaseAnalyzer):
     """Analyzer for checking AI presence of a company (how well AI models know about it)."""
