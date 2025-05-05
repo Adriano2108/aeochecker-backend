@@ -26,8 +26,9 @@ class StrategyReviewAnalyzer(BaseAnalyzer):
         # 1. Content Answerability
         answerability_score, answerability_results = await self._analyze_content_answerability(all_text, soup)
         
-        # 2. Knowedge Base presence 
-            # Check if the company has a Wikipedia page through the wikipedia API
+        # 2. Knowledge Base presence 
+        kb_score, kb_results = await self._analyze_knowledge_base_presence(name)
+        
         # 3. Structured data Implementation
             # a. Is there and Which schema markup there is?
             # b. Mark FAQ, Articles, Review with schema
@@ -38,10 +39,50 @@ class StrategyReviewAnalyzer(BaseAnalyzer):
             # c. Is the content pre-rendered (LLM's don't index JS)
             # d. Is the content in english? If not, is there an english version of the website found?
         
-        strategy_review_result["answerability"] = answerability_results    
-        score = answerability_score
+        strategy_review_result["answerability"] = answerability_results
+        strategy_review_result["knowledge_base"] = kb_results
+        
+        # Calculate the overall score as the average of all component scores
+        score = (answerability_score + kb_score) / 2
         
         return score, strategy_review_result
+    
+    async def _analyze_knowledge_base_presence(self, company_name: str) -> Tuple[float, Dict[str, Any]]:
+        results = {
+            "has_wikipedia_page": False,
+            "wikipedia_url": None,
+            "score": 0.0
+        }
+        
+        try:
+            async with httpx.AsyncClient() as client:
+                api_url = "https://en.wikipedia.org/w/api.php"
+                params = {
+                    "action": "query",
+                    "format": "json",
+                    "titles": company_name,
+                    "redirects": True
+                }
+                
+                response = await client.get(api_url, params=params)
+                data = response.json()
+                
+                if "query" in data and "pages" in data["query"]:
+                    pages = data["query"]["pages"]
+                    if "-1" not in pages:
+                        page_id = next(iter(pages.keys()))
+                        page_data = pages[page_id]
+                        title = page_data.get("title", "")
+                        
+                        results["has_wikipedia_page"] = True
+                        results["wikipedia_url"] = f"https://en.wikipedia.org/wiki/{title.replace(' ', '_')}"
+        except Exception as e:
+            print(f"Error checking Wikipedia presence: {str(e)}")
+            results["error"] = str(e)
+        
+        results["score"] = 100.0 if results["has_wikipedia_page"] else 0.0
+        
+        return results["score"], results
     
     async def _analyze_content_answerability(self, all_text: str, soup: BeautifulSoup = None) -> Tuple[float, Dict[str, Any]]:
         """
