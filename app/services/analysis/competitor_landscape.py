@@ -46,14 +46,14 @@ class CompetitorLandscapeAnalyzer(BaseAnalyzer):
             return {}
 
         tasks = []
-        # if settings.OPENAI_API_KEY:
-        #     tasks.append(query_openai(prompt))
-        # else:
-        #     responses["openai"] = "API key not configured"
-        # if settings.ANTHROPIC_API_KEY:
-        #     tasks.append(query_anthropic(prompt))
-        # else:
-        #     responses["anthropic"] = "API key not configured"
+        if settings.OPENAI_API_KEY:
+            tasks.append(query_openai(prompt))
+        else:
+            responses["openai"] = "API key not configured"
+        if settings.ANTHROPIC_API_KEY:
+            tasks.append(query_anthropic(prompt))
+        else:
+            responses["anthropic"] = "API key not configured"
         if settings.GEMINI_API_KEY:
             tasks.append(query_gemini(prompt))
         else:
@@ -73,74 +73,101 @@ class CompetitorLandscapeAnalyzer(BaseAnalyzer):
                     responses[model_name] = response_text
         return responses
 
-    async def analyze(self, company_facts: dict) -> tuple:
-        """
-        Analyze the competitive landscape for a company website.
-        """
-        # 1. Query LLMs for competitors
-        llm_responses = await self._query_llms_competitors(company_facts)
-        print(json.dumps(llm_responses, indent=4))
-        competitors_lists = []
-        for model, response in llm_responses.items():
+    @staticmethod
+    def _parse_competitor_list(response: str) -> list:
+        """Parse various formats of competitor lists from LLM responses."""
+        try:
+            # First try literal_eval (for clean Python lists)
             try:
-                # First try literal_eval (for clean Python lists)
+                competitors = ast.literal_eval(response.strip())
+                if isinstance(competitors, list):
+                    return [comp.strip() for comp in competitors if isinstance(comp, str)]
+            except (SyntaxError, ValueError):
+                pass
+            
+            # Then try to find any list-like structure with regex
+            list_pattern = r'\[[\'\"](.+?)[\'\"],\s*[\'\"](.+?)[\'\"],\s*[\'\"](.+?)[\'\"]\]'
+            matches = re.search(list_pattern, response)
+            if matches:
+                competitors = [matches.group(1), matches.group(2), matches.group(3)]
+                return [comp.strip() for comp in competitors]
+            
+            # Try a simpler approach to find list-like structures
+            simple_list_pattern = r'\[([\'\"].*?[\'\"](?:,\s*[\'\"].*?[\'\"])*)\]'
+            matches = re.search(simple_list_pattern, response, re.DOTALL)
+            if matches:
                 try:
-                    competitors = ast.literal_eval(response.strip())
+                    items_text = '[' + matches.group(1) + ']'
+                    competitors = ast.literal_eval(items_text)
                     if isinstance(competitors, list):
-                        competitors_lists.append([comp.strip() for comp in competitors if isinstance(comp, str)])
-                        continue
+                        return [comp.strip() for comp in competitors if isinstance(comp, str)]
                 except (SyntaxError, ValueError):
                     pass
-                
-                # Then try to find any list-like structure with regex
-                list_pattern = r'\[[\'\"](.+?)[\'\"],\s*[\'\"](.+?)[\'\"],\s*[\'\"](.+?)[\'\"]\]'
-                matches = re.search(list_pattern, response)
-                if matches:
-                    competitors = [matches.group(1), matches.group(2), matches.group(3)]
-                    competitors_lists.append([comp.strip() for comp in competitors])
-                    continue
-                
-                # Try a simpler approach to find list-like structures
-                simple_list_pattern = r'\[([\'\"].*?[\'\"](?:,\s*[\'\"].*?[\'\"])*)\]'
-                matches = re.search(simple_list_pattern, response, re.DOTALL)
-                if matches:
-                    try:
-                        items_text = '[' + matches.group(1) + ']'
-                        competitors = ast.literal_eval(items_text)
-                        if isinstance(competitors, list):
-                            competitors_lists.append([comp.strip() for comp in competitors if isinstance(comp, str)])
-                            continue
-                    except (SyntaxError, ValueError):
-                        pass
-                
-                # Finally look for backtick-enclosed lists (common in markdown outputs)
-                backtick_pattern = r'```(?:python)?\s*\[(.*?)\]\s*```'
-                matches = re.search(backtick_pattern, response, re.DOTALL)
-                if matches:
-                    try:
-                        items_text = '[' + matches.group(1) + ']'
-                        competitors = ast.literal_eval(items_text)
-                        if isinstance(competitors, list):
-                            competitors_lists.append([comp.strip() for comp in competitors if isinstance(comp, str)])
-                    except (SyntaxError, ValueError):
-                        pass
-            except Exception as e:
-                print(f"Error parsing competitor response: {str(e)}")
-                continue
-                
-        # 2. Count competitors
+            
+            # Finally look for backtick-enclosed lists (common in markdown outputs)
+            backtick_pattern = r'```(?:python)?\s*\[(.*?)\]\s*```'
+            matches = re.search(backtick_pattern, response, re.DOTALL)
+            if matches:
+                try:
+                    items_text = '[' + matches.group(1) + ']'
+                    competitors = ast.literal_eval(items_text)
+                    if isinstance(competitors, list):
+                        return [comp.strip() for comp in competitors if isinstance(comp, str)]
+                except (SyntaxError, ValueError):
+                    pass
+        except Exception as e:
+            print(f"Error parsing competitor response: {str(e)}")
+        
+        return []
+
+    def _extract_all_competitors(self, llm_responses: dict) -> list:
+        """Extract and parse all competitor lists from LLM responses."""
+        competitors_lists = []
+        for model, response in llm_responses.items():
+            parsed_list = self._parse_competitor_list(response)
+            if parsed_list:
+                competitors_lists.append(parsed_list)
+        return competitors_lists
+
+    def _count_and_rank_competitors(self, competitors_lists: list) -> list:
+        """Count and rank competitors based on frequency of mentions."""
         competitor_counter = Counter()
         for lst in competitors_lists:
             for comp in lst:
                 competitor_counter[comp] += 1
                 
         # Get sorted competitors by count
-        sorted_competitors = competitor_counter.most_common()
-        
-        # 3. Check if company is included
-        company_name = company_facts.get("name", "")
+        return competitor_counter.most_common()
+
+    def _calculate_score(self, competitor_counter: Counter, company_name: str) -> tuple:
+        """Calculate score based on whether company is included in competitor lists."""
         included = company_name in competitor_counter.keys()
         score = 10 if included else 0
+        return score, included
+
+    async def analyze(self, company_facts: dict, url: str = None) -> tuple:
+        """
+        Analyze the competitive landscape for a company website.
+        """
+        # 1. Query LLMs for competitors
+        llm_responses = await self._query_llms_competitors(company_facts)
+        print(json.dumps(llm_responses, indent=4))
+        
+        # 2. Extract competitor lists from responses
+        competitors_lists = self._extract_all_competitors(llm_responses)
+        
+        # 3. Count and rank competitors
+        sorted_competitors = self._count_and_rank_competitors(competitors_lists)
+        
+        # 4. Calculate score
+        company_name = company_facts.get("name", "")
+        competitor_counter = Counter(dict(sorted_competitors))
+        score, included = self._calculate_score(competitor_counter, company_name)
+
+        competitors_result = {
+            "sorted_competitors": sorted_competitors,
+            "included": included
+        }
         
         # Return top competitors as tuples of (name, count)
-        return score, included, sorted_competitors[:3] 
+        return score, competitors_result
