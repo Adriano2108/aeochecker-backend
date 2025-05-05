@@ -17,14 +17,10 @@ from app.services.analysis.scrape_utils import scrape_website
 class StrategyReviewAnalyzer(BaseAnalyzer):
     """Analyzer for evaluating strategic positioning of a company."""
     
-    async def analyze(self, url: str, soup: BeautifulSoup = None, all_text: str = None) -> Tuple[float, Dict[str, Any]]:
+    async def analyze(self, name: str, soup: BeautifulSoup = None, all_text: str = None) -> Tuple[float, Dict[str, Any]]:
         """
         Analyze various aspects of a company's website.
         """
-        # If soup or all_text is not provided, we need to scrape the website
-        if soup is None or all_text is None:
-            soup, all_text = await scrape_website(url)
-        
         strategy_review_result = {}
         
         # 1. Content Answerability

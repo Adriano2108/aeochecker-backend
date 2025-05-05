@@ -145,7 +145,7 @@ class CompetitorLandscapeAnalyzer(BaseAnalyzer):
         score = 10 if included else 0
         return score, included
 
-    async def analyze(self, company_facts: dict, url: str = None) -> tuple:
+    async def analyze(self, company_facts: dict) -> tuple:
         """
         Analyze the competitive landscape for a company website.
         """

@@ -9,7 +9,7 @@ from app.core.firebase import db
 from firebase_admin import firestore
 from app.core.constants import AnalysisStatus as AnalysisStatusConstants, AnalysisTagType
 from app.services.analysis import AiPresenceAnalyzer, CompetitorLandscapeAnalyzer, StrategyReviewAnalyzer
-from app.services.analysis.scrape_utils import scrape_website
+from app.services.analysis.scrape_utils import scrape_website, scrape_company_facts
 
 class AnalysisService:
     """Service for analyzing websites and generating reports"""
@@ -36,16 +36,23 @@ class AnalysisService:
             competitor_landscape_analyzer = CompetitorLandscapeAnalyzer()
             strategy_review_analyzer = StrategyReviewAnalyzer()
 
+            # Scrape website
             soup, all_text = await scrape_website(url)
+            if soup is None:
+                return {"job_id": job_id, "status": AnalysisStatusConstants.FAILED, "error": "Failed to scrape website. Please try again later."}
+            
+            company_facts = scrape_company_facts(soup)
+            if company_facts["name"] == "":
+                return {"job_id": job_id, "status": AnalysisStatusConstants.FAILED, "error": "No information found about your website. You need to add name tags, meta tags, and other basic structured data to your website to run this analysis."}
             
             # Run analyses
-            company_facts, ai_presence_score, ai_presence_result = await ai_presence_analyzer.analyze(url, soup)
+            ai_presence_score, ai_presence_result = await ai_presence_analyzer.analyze(company_facts)
             job_ref.update({"progress": 0.5})
 
-            competitor_landscape_score, competitors_result = await competitor_landscape_analyzer.analyze(company_facts, url)
+            competitor_landscape_score, competitors_result = await competitor_landscape_analyzer.analyze(company_facts)
             job_ref.update({"progress": 0.75})
 
-            strategy_review_score, strategy_review_result = await strategy_review_analyzer.analyze(url, soup, all_text)
+            strategy_review_score, strategy_review_result = await strategy_review_analyzer.analyze(company_facts["name"], soup, all_text)
             job_ref.update({"progress": 1.0})
             
             overall_score = (ai_presence_score + competitor_landscape_score + strategy_review_score) / 3
