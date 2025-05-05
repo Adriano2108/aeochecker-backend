@@ -24,21 +24,19 @@ class AiPresenceAnalyzer(BaseAnalyzer):
           f"In 3-4 sentences, tell me about the company {company_facts['name']}. "
           f"Mention its industry, flagship product/service, headquarters city, and founding year if known."
         )
-
-        print(prompt)
         
         responses = {}
         tasks = []
         
-        if settings.OPENAI_API_KEY:
-          tasks.append(query_openai(prompt))
-        else:
-          responses["openai"] = "API key not configured"
+        # if settings.OPENAI_API_KEY:
+        #   tasks.append(query_openai(prompt))
+        # else:
+        #   responses["openai"] = "API key not configured"
             
-        if settings.ANTHROPIC_API_KEY:
-          tasks.append(query_anthropic(prompt))
-        else:
-          responses["anthropic"] = "API key not configured"
+        # if settings.ANTHROPIC_API_KEY:
+        #   tasks.append(query_anthropic(prompt))
+        # else:
+        #   responses["anthropic"] = "API key not configured"
             
         if settings.GEMINI_API_KEY:
           tasks.append(query_gemini(prompt))
@@ -66,76 +64,58 @@ class AiPresenceAnalyzer(BaseAnalyzer):
     def _score_llm_response(company_facts: dict, response: str) -> Tuple[float, dict]:
         score = 0
         details = {}
-        print(response)
         # Awareness
         if company_facts['name']:
             if company_facts['name'] in response:
                 score += 10
                 details['name'] = True
-                print(f"+10: Name '{company_facts['name']}' found in response.")
             else:
                 details['name'] = False
-                print(f"0: Name '{company_facts['name']}' NOT found in response.")
         else:
             details['name'] = False
-            print("SKIP: No name to check.")
 
         if company_facts['key_products_services']:
             if any(prod and prod in response for prod in company_facts['key_products_services']):
                 score += 10
                 details['product'] = True
-                print(f"+10: At least one key product/service found in response.")
             else:
                 details['product'] = False
-                print(f"0: No key product/service found in response.")
         else:
             details['product'] = False
-            print("SKIP: No key products/services to check.")
 
         if company_facts['hq']:
             if company_facts['hq'] in response:
                 score += 3
                 details['hq'] = True
-                print(f"+3: HQ '{company_facts['hq']}' found in response.")
             else:
                 details['hq'] = False
-                print(f"0: HQ '{company_facts['hq']}' NOT found in response.")
         else:
             details['hq'] = False
-            print("SKIP: No HQ to check.")
 
         if company_facts['founded']:
             if company_facts['founded'] in response:
                 score += 3
                 details['founded'] = True
-                print(f"+3: Founded '{company_facts['founded']}' found in response.")
             else:
                 details['founded'] = False
-                print(f"0: Founded '{company_facts['founded']}' NOT found in response.")
         else:
             details['founded'] = False
-            print("SKIP: No founded year to check.")
 
         if company_facts['industry']:
             if company_facts['industry'] in response:
                 score += 3
                 details['industry'] = True
-                print(f"+3: Industry '{company_facts['industry']}' found in response.")
             else:
                 details['industry'] = False
-                print(f"0: Industry '{company_facts['industry']}' NOT found in response.")
         else:
             details['industry'] = False
-            print("SKIP: No industry to check.")
 
         # Check for uncertainty phrases
         if any(x in response.lower() for x in ["i don't know", "I cannot confidently", "I apologize", "I don't have", "I cannot find", "I cannot tell", "I cannot find", "I cannot tell", "i can't tell", "i can't find"]):
             score -= 2
             details['uncertainty'] = True
-            print("-2: Uncertainty phrase found in response.")
         else:
             details['uncertainty'] = False
-            print("0: No uncertainty phrase found in response.")
         return score, details
 
     async def analyze(self, company_facts: dict) -> Tuple[dict, float, str]:
@@ -151,7 +131,6 @@ class AiPresenceAnalyzer(BaseAnalyzer):
             score, detail = self._score_llm_response(company_facts, response)
             scores[model] = score
             details[model] = detail
-            print(score, detail)
         # 3. Aggregate
         avg_score = sum(scores.values()) / len(scores)
         summary_parts = ["AI Presence Analysis:"]
@@ -163,4 +142,4 @@ class AiPresenceAnalyzer(BaseAnalyzer):
             summary_parts.append(f"Gemini: {scores['gemini']}")
         summary_parts.append(f"Average: {avg_score:.2f}")
         summary = ", ".join(summary_parts)
-        return company_facts, avg_score, summary 
+        return avg_score, summary 

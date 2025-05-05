@@ -7,7 +7,6 @@ from app.services.analysis.base import BaseAnalyzer
 from app.core.config import settings
 import asyncio
 import ast
-import json
 from app.services.analysis.utils.llm_utils import query_openai, query_anthropic, query_gemini
 from collections import Counter
 import re
@@ -151,7 +150,6 @@ class CompetitorLandscapeAnalyzer(BaseAnalyzer):
         """
         # 1. Query LLMs for competitors
         llm_responses = await self._query_llms_competitors(company_facts)
-        print(json.dumps(llm_responses, indent=4))
         
         # 2. Extract competitor lists from responses
         competitors_lists = self._extract_all_competitors(llm_responses)

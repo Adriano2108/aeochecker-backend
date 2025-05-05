@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException, status
 from app.schemas.analysis import AnalyzeRequest, AnalysisStatus, AnalysisResult
 from app.api.deps import get_current_user, check_user_credits
-from app.services.analysis import AnalysisService
+from app.services import AnalysisService
 from typing import Dict, Any
 from app.core.constants import AnalysisStatus as AnalysisStatusConstants
 

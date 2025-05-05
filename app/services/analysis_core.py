@@ -46,19 +46,22 @@ class AnalysisService:
             if soup is None:
                 return {"job_id": job_id, "status": AnalysisStatusConstants.FAILED, "error": "Failed to scrape website. Please try again later."}
             
-            company_facts = scrape_company_facts(soup)
+            company_facts = await scrape_company_facts(soup)
             if company_facts["name"] == "":
                 return {"job_id": job_id, "status": AnalysisStatusConstants.FAILED, "error": "No information found about your website. You need to add name tags, meta tags, and other basic structured data to your website to run this analysis."}
             
             # Run analyses
             ai_presence_score, ai_presence_result = await ai_presence_analyzer.analyze(company_facts)
             job_ref.update({"progress": 0.5})
+            print(f"ai_presence_score: {ai_presence_score}")
 
             competitor_landscape_score, competitors_result = await competitor_landscape_analyzer.analyze(company_facts)
             job_ref.update({"progress": 0.75})
-
+            print(f"competitor_landscape_score: {competitor_landscape_score}")
+            
             strategy_review_score, strategy_review_result = await strategy_review_analyzer.analyze(company_facts["name"], url, soup, all_text)
             job_ref.update({"progress": 1.0})
+            print(f"strategy_review_score: {strategy_review_score}")
             
             overall_score = (ai_presence_score + competitor_landscape_score + strategy_review_score) / 3
             
@@ -93,26 +96,26 @@ class AnalysisService:
                 "url": url,
                 "score": overall_score,
                 "title": f"{company_facts['name']} Report",
-                "analysis_synthesis": generate_analysis_synthesis(company_facts['name'], overall_score * 100),
+                "analysis_synthesis": generate_analysis_synthesis(company_facts['name'], overall_score),
                 "analysis_items": analysis_items,
                 "created_at": datetime.now()
             }
             
-            job_ref.update({
-                "status": AnalysisStatusConstants.COMPLETED,
-                "progress": 1.0,
-                "completed_at": datetime.now()
-            })
+            # job_ref.update({
+            #     "status": AnalysisStatusConstants.COMPLETED,
+            #     "progress": 1.0,
+            #     "completed_at": datetime.now()
+            # })
             
-            # Deduct a credit from the user
-            user_ref = db.collection("users").document(user_id)
-            user_ref.update({"credits": firestore.Increment(-1)})
+            # # Deduct a credit from the user
+            # user_ref = db.collection("users").document(user_id)
+            # user_ref.update({"credits": firestore.Increment(-1)})
             
-            # Save the report to the user's reports collection
-            report_ref = db.collection("users").document(user_id).collection("reports").document(job_id)
-            report_ref.set(result)
+            # # Save the report to the user's reports collection
+            # report_ref = db.collection("users").document(user_id).collection("reports").document(job_id)
+            # report_ref.set(result)
             
-            return {"job_id": job_id, "status": "completed"}
+            return {"job_id": job_id, "status": AnalysisStatusConstants.COMPLETED, "result": result}
             
         except Exception as e:
             job_ref.update({

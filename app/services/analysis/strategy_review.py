@@ -53,7 +53,7 @@ class StrategyReviewAnalyzer(BaseAnalyzer):
         
         # Calculate the overall score as the average of all component scores
         score = (answerability_score + kb_score + structured_data_score + accessibility_score) / 4
-        
+                
         return score, strategy_review_result
     
     def _calculate_structured_data_score(self, results: Dict[str, Any]) -> float:
