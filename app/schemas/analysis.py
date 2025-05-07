@@ -1,5 +1,5 @@
 from pydantic import HttpUrl, Field
-from typing import List, Optional
+from typing import List, Optional, Any
 from datetime import datetime
 from app.core.constants import AnalysisStatus as AnalysisStatusConstants, AnalysisTagType
 from app.core.models import CamelCaseModel
@@ -11,7 +11,7 @@ class AnalysisTask(CamelCaseModel):
     id: str
     title: str
     tag_type: AnalysisTagType
-    result: str
+    result: Any
     completed: bool
 
 class AnalysisResult(CamelCaseModel):

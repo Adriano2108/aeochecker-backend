@@ -118,7 +118,7 @@ class AiPresenceAnalyzer(BaseAnalyzer):
             details['uncertainty'] = False
         return score, details
 
-    async def analyze(self, company_facts: dict) -> Tuple[dict, float, str]:
+    async def analyze(self, company_facts: dict) -> Tuple[float, str, dict]:
         """
         Analyze AI presence of a company website.
         """
@@ -132,7 +132,7 @@ class AiPresenceAnalyzer(BaseAnalyzer):
             scores[model] = score
             details[model] = detail
         # 3. Aggregate
-        avg_score = sum(scores.values()) / len(scores)
+        avg_score = sum(scores.values()) / len(scores) if scores else 0.0
         summary_parts = ["AI Presence Analysis:"]
         if 'openai' in scores:
             summary_parts.append(f"OpenAI: {scores['openai']}")
@@ -141,5 +141,5 @@ class AiPresenceAnalyzer(BaseAnalyzer):
         if 'gemini' in scores:
             summary_parts.append(f"Gemini: {scores['gemini']}")
         summary_parts.append(f"Average: {avg_score:.2f}")
-        summary = ", ".join(summary_parts)
-        return avg_score, summary 
+        analysis_result = ", ".join(summary_parts)
+        return avg_score, analysis_result, details

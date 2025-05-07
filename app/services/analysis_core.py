@@ -101,19 +101,19 @@ class AnalysisService:
                 "created_at": datetime.now()
             }
             
-            # job_ref.update({
-            #     "status": AnalysisStatusConstants.COMPLETED,
-            #     "progress": 1.0,
-            #     "completed_at": datetime.now()
-            # })
+            job_ref.update({
+                "status": AnalysisStatusConstants.COMPLETED,
+                "progress": 1.0,
+                "completed_at": datetime.now()
+            })
             
-            # # Deduct a credit from the user
-            # user_ref = db.collection("users").document(user_id)
-            # user_ref.update({"credits": firestore.Increment(-1)})
+            # Deduct a credit from the user
+            user_ref = db.collection("users").document(user_id)
+            user_ref.update({"credits": firestore.Increment(-1)})
             
-            # # Save the report to the user's reports collection
-            # report_ref = db.collection("users").document(user_id).collection("reports").document(job_id)
-            # report_ref.set(result)
+            # Save the report to the user's reports collection
+            report_ref = db.collection("users").document(user_id).collection("reports").document(job_id)
+            report_ref.set(result)
             
             return {"job_id": job_id, "status": AnalysisStatusConstants.COMPLETED, "result": result}
             
