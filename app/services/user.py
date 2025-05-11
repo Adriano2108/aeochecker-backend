@@ -47,7 +47,8 @@ class UserService:
                 title=report_data.get("title"),
                 score=report_data.get("score"),
                 created_at=report_data.get("created_at"),
-                analysis_synthesis=report_data.get("analysis_synthesis")
+                analysis_synthesis=report_data.get("analysis_synthesis"),
+                job_id=report.id
             )
             result.append(summary)
         

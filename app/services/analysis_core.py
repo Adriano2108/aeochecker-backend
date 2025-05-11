@@ -111,7 +111,8 @@ class AnalysisService:
                 "title": f"{company_facts['name']} Report",
                 "analysis_synthesis": generate_analysis_synthesis(company_facts['name'], overall_score),
                 "analysis_items": analysis_items,
-                "created_at": datetime.now().isoformat()
+                "created_at": datetime.now().isoformat(),
+                "job_id": job_id
             }
 
             print(f"Analysis items: {analysis_items}")

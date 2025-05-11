@@ -74,6 +74,7 @@ class ReportSummary(CamelCaseModel):
     score: float
     created_at: datetime
     analysis_synthesis: str
+    job_id: str
 
     class Config:
         json_schema_extra = {
