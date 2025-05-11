@@ -3,6 +3,7 @@ from app.schemas.user import UserResponse
 from app.api.deps import get_current_user
 from app.services.user import UserService
 from typing import Dict, Any, List
+from app.schemas.analysis import ReportSummary
 
 router = APIRouter(
     prefix="/users",
@@ -55,7 +56,7 @@ async def promote_user(user=Depends(get_current_user)):
     
     return user_data
 
-@router.get("/me/reports", response_model=List[Dict[str, Any]])
+@router.get("/me/reports", response_model=List[ReportSummary])
 async def get_my_reports(limit: int = 10, user=Depends(get_current_user)):
     """
     Get current user's analysis reports

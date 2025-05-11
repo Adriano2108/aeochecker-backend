@@ -3,6 +3,7 @@ from app.core.firebase import db, firebase_auth
 from firebase_admin import firestore
 from datetime import datetime
 from app.core.constants import UserCredits, UserTypes
+from app.schemas.analysis import ReportSummary
 
 class UserService:
     """Service for user data management"""
@@ -28,7 +29,7 @@ class UserService:
         return user_data
     
     @staticmethod
-    async def get_user_reports(user_id: str, limit: int = 10) -> List[Dict[str, Any]]:
+    async def get_user_reports(user_id: str, limit: int = 10) -> List[ReportSummary]:
         """
         Retrieve user's analysis reports
         """
@@ -40,7 +41,15 @@ class UserService:
             report_data = report.to_dict()
             if report_data.get("created_at") and not isinstance(report_data["created_at"], datetime):
                 report_data["created_at"] = report_data["created_at"].datetime() if hasattr(report_data["created_at"], "datetime") else datetime.now()
-            result.append(report_data)
+            
+            summary = ReportSummary(
+                url=report_data.get("url"),
+                title=report_data.get("title"),
+                score=report_data.get("score"),
+                created_at=report_data.get("created_at"),
+                analysis_synthesis=report_data.get("analysis_synthesis")
+            )
+            result.append(summary)
         
         return result
 

@@ -66,4 +66,22 @@ class AnalysisStatus(CamelCaseModel):
                 "status": AnalysisStatusConstants.PROCESSING,
                 "progress": 0.75,
             }
+        }
+
+class ReportSummary(CamelCaseModel):
+    url: HttpUrl
+    title: str
+    score: float
+    created_at: datetime
+    analysis_synthesis: str
+
+    class Config:
+        json_schema_extra = {
+            "example": {
+                "url": "https://example.com",
+                "title": "Analysis Title",
+                "score": 85.5,
+                "createdAt": "2023-07-10T14:23:56.123Z",
+                "analysisSynthesis": "Analysis Synthesis"
+            }
         } 
