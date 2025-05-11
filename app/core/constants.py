@@ -25,9 +25,3 @@ class AnalysisStatus(str, Enum):
     FAILED = "failed" 
     NOT_FOUND = "not_found"
     FORBIDDEN = "forbidden"
-
-class AnalysisTagType(str, Enum):
-    """Constants related to analysis tag type"""
-    FIXES = "fixes"
-    HIGH = "high"
-    IMPORTANT = "important"

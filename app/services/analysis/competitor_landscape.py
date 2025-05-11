@@ -10,6 +10,7 @@ import ast
 from app.services.analysis.utils.llm_utils import query_openai, query_anthropic, query_gemini
 from collections import Counter
 import re
+from app.schemas.analysis import CompetitorLandscapeAnalysisResult, CompetitorEntry
 
 class CompetitorLandscapeAnalyzer(BaseAnalyzer):
     """Analyzer for evaluating competitive landscape of a company."""
@@ -20,7 +21,7 @@ class CompetitorLandscapeAnalyzer(BaseAnalyzer):
         Query multiple LLMs for the top 3 competitors in the given industry/product.
         Returns a dict of model_name -> list of competitors (or error string).
         """
-        industry = company_facts.get("industry", "")
+        industry = company_facts.get("industry", "") or "Safety"
         products = company_facts.get("key_products_services", [])
         product = products[0] if products else ""
 
@@ -42,20 +43,24 @@ class CompetitorLandscapeAnalyzer(BaseAnalyzer):
                 "Return only a Python list of company names, e.g., ['Company1', 'Company2', 'Company3']. Only return the list, no other text."
             )
         else: 
+            print("No industry or product found/provided, skipping competitor analysis")
             return {}
 
         tasks = []
         if settings.OPENAI_API_KEY:
             tasks.append(query_openai(prompt))
         else:
+            print("OpenAI API key not configured")
             responses["openai"] = "API key not configured"
         if settings.ANTHROPIC_API_KEY:
             tasks.append(query_anthropic(prompt))
         else:
+            print("Anthropic API key not configured")
             responses["anthropic"] = "API key not configured"
         if settings.GEMINI_API_KEY:
             tasks.append(query_gemini(prompt))
         else:
+            print("Gemini API key not configured")
             responses["gemini"] = "API key not configured"
         if tasks:
             results = await asyncio.gather(*tasks, return_exceptions=True)
@@ -150,22 +155,27 @@ class CompetitorLandscapeAnalyzer(BaseAnalyzer):
         """
         # 1. Query LLMs for competitors
         llm_responses = await self._query_llms_competitors(company_facts)
+
+        print(f"LLM responses: {llm_responses}")
         
         # 2. Extract competitor lists from responses
         competitors_lists = self._extract_all_competitors(llm_responses)
         
         # 3. Count and rank competitors
-        sorted_competitors = self._count_and_rank_competitors(competitors_lists)
+        sorted_competitors_tuples = self._count_and_rank_competitors(competitors_lists)
         
         # 4. Calculate score
         company_name = company_facts.get("name", "")
-        competitor_counter = Counter(dict(sorted_competitors))
+        competitor_counter = Counter(dict(sorted_competitors_tuples))
         score, included = self._calculate_score(competitor_counter, company_name)
 
-        competitors_result = {
-            "sorted_competitors": sorted_competitors,
-            "included": included
-        }
-        
+        # Convert list of tuples to list of CompetitorEntry objects
+        sorted_competitors_objects = [CompetitorEntry(name=name, count=count) for name, count in sorted_competitors_tuples]
+
+        competitors_result = CompetitorLandscapeAnalysisResult(
+            sorted_competitors=sorted_competitors_objects,
+            included=included
+        )
+
         # Return top competitors as tuples of (name, count)
         return score, competitors_result

@@ -444,7 +444,7 @@ class StrategyReviewAnalyzer(BaseAnalyzer):
                     "js_framework_hint": bool # Indication if common JS frameworks detected
                 },
                 "language": {
-                    "detected_language": str | None,
+                    "detected_languages": list[str] | None,
                     "is_english": bool | None,
                     "english_version_url": str | None # Found via hreflang
                 },
@@ -461,7 +461,7 @@ class StrategyReviewAnalyzer(BaseAnalyzer):
                 "js_framework_hint": False
             },
             "language": {
-                "detected_language": None,
+                "detected_languages": None,
                 "is_english": None,
                 "english_version_url": None
             },
@@ -517,7 +517,7 @@ class StrategyReviewAnalyzer(BaseAnalyzer):
                 # Use a sample for potentially very long text to speed up detection
                 sample_text = body_text[:2000] if len(body_text) > 2000 else body_text
                 lang = detect(sample_text)
-                results["language"]["detected_language"] = lang
+                results["language"]["detected_languages"] = [lang]
                 results["language"]["is_english"] = (lang == 'en')
 
                 if lang != 'en':

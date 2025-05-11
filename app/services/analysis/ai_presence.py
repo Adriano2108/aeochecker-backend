@@ -118,7 +118,7 @@ class AiPresenceAnalyzer(BaseAnalyzer):
             details['uncertainty'] = False
         return score, details
 
-    async def analyze(self, company_facts: dict) -> Tuple[float, str, dict]:
+    async def analyze(self, company_facts: dict) -> Tuple[float, dict]:
         """
         Analyze AI presence of a company website.
         """
@@ -133,13 +133,16 @@ class AiPresenceAnalyzer(BaseAnalyzer):
             details[model] = detail
         # 3. Aggregate
         avg_score = sum(scores.values()) / len(scores) if scores else 0.0
-        summary_parts = ["AI Presence Analysis:"]
-        if 'openai' in scores:
-            summary_parts.append(f"OpenAI: {scores['openai']}")
-        if 'anthropic' in scores:
-            summary_parts.append(f"Anthropic: {scores['anthropic']}")
-        if 'gemini' in scores:
-            summary_parts.append(f"Gemini: {scores['gemini']}")
-        summary_parts.append(f"Average: {avg_score:.2f}")
-        analysis_result = ", ".join(summary_parts)
-        return avg_score, analysis_result, details
+        
+        # Create object-based result structure
+        analysis_result = {}
+        
+        for model in scores.keys():
+            # For each model, add its details and score
+            if model not in analysis_result:
+                analysis_result[model] = {}
+            
+            analysis_result[model].update(details[model])
+            analysis_result[model]['score'] = scores[model]
+        
+        return avg_score, analysis_result
