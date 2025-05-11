@@ -13,32 +13,53 @@ class AnalysisService:
     """Service for analyzing websites and generating reports"""
     
     @classmethod
-    async def analyze_website(cls, url: str, user_id: str) -> Dict[str, Any]:
+    async def create_analysis_job(cls, url: str, user_id: str) -> Dict[str, Any]:
         """
-        Perform full website analysis
+        Create an initial analysis job entry and return its details.
         """
         job_id = str(uuid.uuid4())
-        
         job_ref = db.collection("analysis_jobs").document(job_id)
-        job_ref.set({
+        
+        initial_job_data = {
             "url": url,
             "user_id": user_id,
             "status": AnalysisStatusConstants.PROCESSING,
             "created_at": datetime.now().isoformat(),
             "progress": 0
-        })
+        }
+        job_ref.set(initial_job_data) 
+        
+        return {
+            "job_id": job_id,
+            "status": AnalysisStatusConstants.PROCESSING,
+            "progress": 0
+        }
 
-        print(f"Analyzing website: {url}")
+    @classmethod
+    async def perform_analysis_task(cls, job_id: str, url: str, user_id: str):
+        """
+        Perform full website analysis as a background task.
+        Updates Firestore with progress and final status/result.
+        """
+        job_ref = db.collection("analysis_jobs").document(job_id)
 
+        print(f"Background task started for job_id: {job_id}, url: {url}")
+        # Note: The original initial job_ref.set is removed as it's handled by create_analysis_job
+        
         try:
             validated_url = await _validate_and_get_best_url(url)
             if validated_url != url:
                 url = validated_url
         except Exception as e:
-            print(f"Error validating URL: {str(e)}")
-            return {"job_id": job_id, "status": AnalysisStatusConstants.FAILED, "error": str(e)}
+            print(f"Error validating URL for job {job_id}: {str(e)}")
+            job_ref.update({
+                "status": AnalysisStatusConstants.FAILED,
+                "error": str(e),
+                "completed_at": datetime.now().isoformat()
+            })
+            return 
         
-        print(f"Validated URL: {url}")
+        print(f"Validated URL for job {job_id}: {url}")
         
         try:
             # Instantiate analyzers
@@ -47,39 +68,49 @@ class AnalysisService:
             strategy_review_analyzer = StrategyReviewAnalyzer()
 
             # Scrape website
-            print("Scraping website...")
+            print(f"Scraping website for job {job_id}...")
             soup, all_text = await scrape_website(url)
-            print(f"Scraped website")
+            print(f"Scraped website for job {job_id}")
             if soup is None:
-                print("Failed to scrape website. Please try again later.")
-                return {"job_id": job_id, "status": AnalysisStatusConstants.FAILED, "error": "Failed to scrape website. Please try again later."}
-            
-            print("Scraping company facts...")
+                print(f"Failed to scrape website for job {job_id}.")
+                job_ref.update({
+                    "status": AnalysisStatusConstants.FAILED,
+                    "error": "Failed to scrape website. Please try again later.",
+                    "completed_at": datetime.now().isoformat()
+                })
+                return
+
+            print(f"Scraping company facts for job {job_id}...")
             company_facts = await scrape_company_facts(soup)
-            print(f"Company facts: {company_facts}")
+            print(f"Company facts for job {job_id}: {company_facts}")
             if company_facts["name"] == "":
-                print("No information found about your website. You need to add name tags, meta tags, and other basic structured data to your website to run this analysis.")
-                return {"job_id": job_id, "status": AnalysisStatusConstants.FAILED, "error": "No information found about your website. You need to add name tags, meta tags, and other basic structured data to your website to run this analysis."}
+                print(f"No information found for website in job {job_id}.")
+                job_ref.update({
+                    "status": AnalysisStatusConstants.FAILED,
+                    "error": "No information found about your website. You need to add name tags, meta tags, and other basic structured data to your website to run this analysis.",
+                    "completed_at": datetime.now().isoformat()
+                })
+                return
                 
             # Run analyses
-            print("Running AI Presence analysis...")
+            print(f"Running AI Presence analysis for job {job_id}...")
             ai_presence_score, ai_presence_result = await ai_presence_analyzer.analyze(company_facts)
             job_ref.update({"progress": 0.5})
-            print(f"ai_presence_score: {ai_presence_score}")
+            print(f"AI Presence score for job {job_id}: {ai_presence_score}")
 
-            print("Running Competitor Landscape analysis...")
+            print(f"Running Competitor Landscape analysis for job {job_id}...")
             competitor_landscape_score, competitors_result = await competitor_landscape_analyzer.analyze(company_facts)
             job_ref.update({"progress": 0.75})
-            print(f"competitor_landscape_score: {competitor_landscape_score}")
+            print(f"Competitor Landscape score for job {job_id}: {competitor_landscape_score}")
 
-            print("Running Strategy Review analysis...")
+            print(f"Running Strategy Review analysis for job {job_id}...")
             strategy_review_score, strategy_review_result = await strategy_review_analyzer.analyze(company_facts["name"], url, soup, all_text)
-            job_ref.update({"progress": 1.0})
-            print(f"strategy_review_score: {strategy_review_score}")
+            # job_ref.update({"progress": 1.0}) # Progress 1.0 is set with COMPLETED status
+            print(f"Strategy Review score for job {job_id}: {strategy_review_score}")
             
             overall_score = (ai_presence_score + competitor_landscape_score + strategy_review_score) / 3
 
-            print(f"Overall score: {overall_score}")
+            print(f"Overall score for job {job_id}: {overall_score}")
             
             analysis_items = [
                 {
@@ -105,17 +136,17 @@ class AnalysisService:
                 },
             ]
             
-            result = {
+            result_data = {
                 "url": url,
                 "score": overall_score,
                 "title": f"{company_facts['name']} Report",
                 "analysis_synthesis": generate_analysis_synthesis(company_facts['name'], overall_score),
                 "analysis_items": analysis_items,
-                "created_at": datetime.now().isoformat(),
+                "created_at": datetime.now().isoformat(), # This is report creation time, job created_at is separate
                 "job_id": job_id
             }
 
-            print(f"Analysis items: {analysis_items}")
+            print(f"Analysis items for job {job_id}: {analysis_items}")
             
             job_ref.update({
                 "status": AnalysisStatusConstants.COMPLETED,
@@ -129,11 +160,9 @@ class AnalysisService:
             
             # Save the report to the user's reports collection
             report_ref = db.collection("users").document(user_id).collection("reports").document(job_id)
-            report_ref.set(result)
+            report_ref.set(result_data)
 
-            print(json.dumps(result, indent=4))
-            
-            return {"job_id": job_id, "status": AnalysisStatusConstants.COMPLETED, "result": result}
+            print(f"Analysis for job {job_id} completed. Report saved: {json.dumps(result_data, indent=4)}")
             
         except Exception as e:
             job_ref.update({
@@ -141,8 +170,7 @@ class AnalysisService:
                 "error": str(e),
                 "completed_at": datetime.now().isoformat()
             })
-            print(f"Error analyzing website: {str(e)}")
-            return {"job_id": job_id, "status": AnalysisStatusConstants.FAILED, "error": str(e)}
+            print(f"Error analyzing website for job {job_id}: {str(e)}")
     
     @staticmethod
     async def get_job_status(job_id: str, user_id: str) -> Dict[str, Any]:

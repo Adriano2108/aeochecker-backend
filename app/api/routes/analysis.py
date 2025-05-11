@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status, BackgroundTasks
 from app.schemas.analysis import AnalyzeRequest, AnalysisStatus, AnalysisResult
 from app.api.deps import get_current_user, check_user_credits
 from app.services import AnalysisService
@@ -12,22 +12,27 @@ router = APIRouter(
 )
 
 @router.post("/analyze", response_model=AnalysisStatus)
-async def analyze_site(request: AnalyzeRequest, user_data=Depends(check_user_credits)):
+async def analyze_site(request: AnalyzeRequest, background_tasks: BackgroundTasks, user_data=Depends(check_user_credits)):
     """
     Analyze a website and return the job ID for polling status
     """
     user = user_data["user"]
     
-    result = await AnalysisService.analyze_website(
+    initial_job_data = await AnalysisService.create_analysis_job(
         url=str(request.url),
         user_id=user["uid"]
     )
     
-    return {
-        "job_id": result.get("job_id"),
-        "status": result.get("status"),
-        "progress": result.get("progress", 0)
-    }
+    job_id = initial_job_data["job_id"]
+    
+    background_tasks.add_task(
+        AnalysisService.perform_analysis_task,
+        job_id=job_id,
+        url=str(request.url),
+        user_id=user["uid"]
+    )
+    
+    return initial_job_data
 
 @router.get("/status/{job_id}", response_model=AnalysisStatus)
 async def job_status(job_id: str, user=Depends(get_current_user)):
