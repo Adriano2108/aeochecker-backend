@@ -282,6 +282,22 @@ async def scrape_company_facts(url: str, soup: BeautifulSoup, all_text: str) -> 
         except (json.JSONDecodeError, TypeError, AttributeError) as e:
             continue
 
+    # Fallback for name extraction: use domain name if still empty
+    if not name:
+        try:
+            parsed_url = urlparse(url)
+            domain = parsed_url.netloc
+            # Remove 'www.' prefix if exists
+            if domain.startswith('www.'):
+                domain = domain[4:]
+            # Extract the main part before the first dot (e.g., 'github' from 'github.com')
+            name_from_domain = domain.split('.')[0]
+            # Capitalize the first letter
+            if name_from_domain:
+                name = name_from_domain[0].upper() + name_from_domain[1:]
+        except Exception: 
+            pass
+
     extracted_data = _extract_industry_and_products(soup, all_text)
     industry = extracted_data["industry"]
     key_products_services = extracted_data["key_products_services"]

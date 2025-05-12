@@ -81,7 +81,7 @@ class AnalysisService:
                 return
 
             print(f"Scraping company facts for job {job_id}...")
-            company_facts = await scrape_company_facts(soup)
+            company_facts = await scrape_company_facts(url, soup, all_text)
             print(f"Company facts for job {job_id}: {company_facts}")
             if company_facts["name"] == "":
                 print(f"No information found for website in job {job_id}.")
