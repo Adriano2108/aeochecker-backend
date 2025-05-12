@@ -21,25 +21,25 @@ class CompetitorLandscapeAnalyzer(BaseAnalyzer):
         Query multiple LLMs for the top 3 competitors in the given industry/product.
         Returns a dict of model_name -> list of competitors (or error string).
         """
-        industry = company_facts.get("industry", "") or "Safety"
+        industry = company_facts.get("industry", "") or ""
         products = company_facts.get("key_products_services", [])
-        product = products[0] if products else ""
+        products_string = ", ".join(products)
 
         responses = {}
 
-        if industry and product:
+        if industry and products_string:
             prompt = (
-                f"List the top 3 companies in the {industry} industry for {product}. "
+                f"List the top 3 companies in the {industry} industry for {products_string}. "
                 "Return only a Python list of company names, e.g., ['Company1', 'Company2', 'Company3']. Only return the list, no other text."
             )
-        elif industry and not product: 
+        elif industry and not products_string: 
             prompt = (
                 f"List the top 3 companies in the {industry} industry. "
                 "Return only a Python list of company names, e.g., ['Company1', 'Company2', 'Company3']. Only return the list, no other text."
             )
-        elif not industry and product: 
+        elif not industry and products_string: 
             prompt = (
-                f"List the top 3 companies in the {product} product. "
+                f"List the top 3 companies in the {products_string} product. "
                 "Return only a Python list of company names, e.g., ['Company1', 'Company2', 'Company3']. Only return the list, no other text."
             )
         else: 
