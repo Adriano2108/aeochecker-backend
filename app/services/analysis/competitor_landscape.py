@@ -136,16 +136,36 @@ class CompetitorLandscapeAnalyzer(BaseAnalyzer):
     def _count_and_rank_competitors(self, competitors_lists: list) -> list:
         """Count and rank competitors based on frequency of mentions."""
         competitor_counter = Counter()
+        original_casing_counts = Counter()
+        original_casing_map = {}
+
         for lst in competitors_lists:
             for comp in lst:
-                competitor_counter[comp] += 1
-                
-        # Get sorted competitors by count
-        return competitor_counter.most_common()
+                normalized_comp = comp.lower()
+                competitor_counter[normalized_comp] += 1
+                # Track counts for each original casing of the normalized name
+                original_casing_counts[(normalized_comp, comp)] += 1
+                # Update the map to store the most frequent original casing
+                current_most_frequent_casing = original_casing_map.get(normalized_comp)
+                if current_most_frequent_casing is None or \
+                   original_casing_counts[(normalized_comp, comp)] > original_casing_counts.get((normalized_comp, current_most_frequent_casing), 0):
+                    original_casing_map[normalized_comp] = comp
+
+        # Get sorted competitors by count (using normalized names)
+        sorted_normalized = competitor_counter.most_common()
+
+        # Map back to the most frequent original casing
+        ranked_competitors = []
+        for normalized_name, count in sorted_normalized:
+            original_name = original_casing_map.get(normalized_name, normalized_name) # Fallback to normalized if somehow missing
+            ranked_competitors.append((original_name, count))
+
+        return ranked_competitors
 
     def _calculate_score(self, competitor_counter: Counter, company_name: str) -> tuple:
         """Calculate score based on whether company is included in competitor lists."""
-        included = company_name in competitor_counter.keys()
+        normalized_company_name = company_name.lower()
+        included = any(key.lower() == normalized_company_name for key in competitor_counter.keys())
         score = 10 if included else 0
         return score, included
 

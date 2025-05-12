@@ -28,15 +28,15 @@ class AiPresenceAnalyzer(BaseAnalyzer):
         responses = {}
         tasks = []
         
-        # if settings.OPENAI_API_KEY:
-        #   tasks.append(query_openai(prompt))
-        # else:
-        #   responses["openai"] = "API key not configured"
+        if settings.OPENAI_API_KEY:
+          tasks.append(query_openai(prompt))
+        else:
+          responses["openai"] = "API key not configured"
             
-        # if settings.ANTHROPIC_API_KEY:
-        #   tasks.append(query_anthropic(prompt))
-        # else:
-        #   responses["anthropic"] = "API key not configured"
+        if settings.ANTHROPIC_API_KEY:
+          tasks.append(query_anthropic(prompt))
+        else:
+          responses["anthropic"] = "API key not configured"
             
         if settings.GEMINI_API_KEY:
           tasks.append(query_gemini(prompt))
@@ -64,54 +64,50 @@ class AiPresenceAnalyzer(BaseAnalyzer):
     def _score_llm_response(company_facts: dict, response: str) -> Tuple[float, dict]:
         score = 0
         details = {}
+        response_lower = response.lower()  # Convert response to lowercase once
+
         # Awareness
-        if company_facts['name']:
-            if company_facts['name'] in response:
-                score += 10
-                details['name'] = True
-            else:
-                details['name'] = False
+        if company_facts['name'].lower() in response_lower:
+            score += 20
+            details['name'] = True
         else:
             details['name'] = False
 
-        if company_facts['key_products_services']:
-            if any(prod and prod in response for prod in company_facts['key_products_services']):
-                score += 10
-                details['product'] = True
-            else:
-                details['product'] = False
+        if any(prod and prod.lower() in response_lower for prod in company_facts['key_products_services']):
+            score += 20
+            details['product'] = True
         else:
             details['product'] = False
 
-        if company_facts['hq']:
-            if company_facts['hq'] in response:
-                score += 3
-                details['hq'] = True
-            else:
-                details['hq'] = False
+        hq_keywords = ["hq", "headquarters", "main office", "based in", "located"]
+        hq_found = company_facts['hq'].lower() in response_lower or \
+                    any(keyword in response_lower for keyword in hq_keywords)
+        if hq_found:
+            score += 20
+            details['hq'] = True
         else:
             details['hq'] = False
 
-        if company_facts['founded']:
-            if company_facts['founded'] in response:
-                score += 3
-                details['founded'] = True
-            else:
-                details['founded'] = False
+        founded_keywords = ["founded", "founding", "established", "created", "launched"]
+        founded_fact = str(company_facts['founded']).lower()
+        founded_found = founded_fact in response_lower or \
+                        any(keyword in response_lower for keyword in founded_keywords)
+        if founded_found:
+            score += 20
+            details['founded'] = True
         else:
             details['founded'] = False
 
-        if company_facts['industry']:
-            if company_facts['industry'] in response:
-                score += 3
-                details['industry'] = True
-            else:
-                details['industry'] = False
+        industry_keywords = ["industry"]
+        industry_found = company_facts['industry'].lower() in response_lower or \
+                            any(keyword in response_lower for keyword in industry_keywords)
+        if industry_found:
+            score += 20
+            details['industry'] = True
         else:
             details['industry'] = False
 
-        # Check for uncertainty phrases
-        if any(x in response.lower() for x in ["i don't know", "I cannot confidently", "I apologize", "I don't have", "I cannot find", "I cannot tell", "I cannot find", "I cannot tell", "i can't tell", "i can't find"]):
+        if any(x in response_lower for x in ["don't know", "unable to", "unknown", "cannot confidently", "i apologize", "i don't have", "cannot find", "cannot tell", "can't tell", "can't find"]):
             score -= 2
             details['uncertainty'] = True
         else:
@@ -124,6 +120,7 @@ class AiPresenceAnalyzer(BaseAnalyzer):
         """
         # 1. Query LLMs
         llm_responses = await self._query_llms(company_facts)
+        print(llm_responses)
         # 2. Score each response
         scores = {}
         details = {}

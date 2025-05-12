@@ -93,25 +93,16 @@ class AnalysisService:
                 return
                 
             # Run analyses
-            print(f"Running AI Presence analysis for job {job_id}...")
             ai_presence_score, ai_presence_result = await ai_presence_analyzer.analyze(company_facts)
             job_ref.update({"progress": 0.5})
-            print(f"AI Presence score for job {job_id}: {ai_presence_score}")
 
-            print(f"Running Competitor Landscape analysis for job {job_id}...")
             competitor_landscape_score, competitors_result = await competitor_landscape_analyzer.analyze(company_facts)
             job_ref.update({"progress": 0.75})
-            print(f"Competitor Landscape score for job {job_id}: {competitor_landscape_score}")
 
-            print(f"Running Strategy Review analysis for job {job_id}...")
             strategy_review_score, strategy_review_result = await strategy_review_analyzer.analyze(company_facts["name"], url, soup, all_text)
-            # job_ref.update({"progress": 1.0}) # Progress 1.0 is set with COMPLETED status
-            print(f"Strategy Review score for job {job_id}: {strategy_review_score}")
             
             overall_score = (ai_presence_score + competitor_landscape_score + strategy_review_score) / 3
 
-            print(f"Overall score for job {job_id}: {overall_score}")
-            
             analysis_items = [
                 {
                     "id": "ai_presence",
@@ -139,15 +130,13 @@ class AnalysisService:
             result_data = {
                 "url": url,
                 "score": overall_score,
-                "title": f"{company_facts['name']} Report",
+                "title": company_facts['name'],
                 "analysis_synthesis": generate_analysis_synthesis(company_facts['name'], overall_score),
                 "analysis_items": analysis_items,
-                "created_at": datetime.now().isoformat(), # This is report creation time, job created_at is separate
+                "created_at": datetime.now().isoformat(),
                 "job_id": job_id
             }
 
-            print(f"Analysis items for job {job_id}: {analysis_items}")
-            
             job_ref.update({
                 "status": AnalysisStatusConstants.COMPLETED,
                 "progress": 1.0,
