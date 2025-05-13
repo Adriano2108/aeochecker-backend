@@ -111,7 +111,8 @@ class AiPresenceAnalyzer(BaseAnalyzer):
             details['industry'] = False
 
         if any(x in response_lower for x in ["don't know", "unable to", "unknown", "cannot confidently", "i apologize", "i don't have", "cannot find", "cannot tell", "can't tell", "can't find"]):
-            score -= 2
+            if score > 0:
+              score -= 2
             details['uncertainty'] = True
         else:
             details['uncertainty'] = False

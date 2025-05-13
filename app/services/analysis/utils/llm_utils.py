@@ -1,6 +1,6 @@
 from app.core.config import settings
 
-async def query_openai(prompt: str, temperature: float = 0.3):
+async def query_openai(prompt: str, temperature: float = 0.1):
     import openai
     client = openai.AsyncOpenAI(api_key=settings.OPENAI_API_KEY)
     response = await client.responses.create(
@@ -11,7 +11,7 @@ async def query_openai(prompt: str, temperature: float = 0.3):
     )
     return "openai", response.output_text
 
-async def query_anthropic(prompt: str, temperature: float = 0.3):
+async def query_anthropic(prompt: str, temperature: float = 0.1):
     from anthropic import AsyncAnthropic
     client = AsyncAnthropic(api_key=settings.ANTHROPIC_API_KEY)
     response = await client.messages.create(
@@ -23,7 +23,7 @@ async def query_anthropic(prompt: str, temperature: float = 0.3):
     )
     return "anthropic", response.content[0].text
 
-async def query_gemini(prompt: str, temperature: float = 0.3):
+async def query_gemini(prompt: str, temperature: float = 0.1):
     from google import genai
     from google.genai.types import Tool, GenerateContentConfig, GoogleSearch
     client = genai.Client(api_key=settings.GEMINI_API_KEY)

@@ -7,7 +7,7 @@ from firebase_admin import firestore
 from app.core.constants import AnalysisStatus as AnalysisStatusConstants
 from app.services.analysis import AiPresenceAnalyzer, CompetitorLandscapeAnalyzer, StrategyReviewAnalyzer
 from app.services.analysis.utils.scrape_utils import scrape_website, scrape_company_facts, _validate_and_get_best_url
-from app.services.analysis.utils.response import generate_analysis_synthesis
+from app.services.analysis.utils.response import generate_analysis_synthesis, generate_dummy_report
 
 class AnalysisService:
     """Service for analyzing websites and generating reports"""
@@ -215,7 +215,14 @@ class AnalysisService:
         if not report.exists:
             return {"status": AnalysisStatusConstants.NOT_FOUND}
         
-        print(json.dumps(report.to_dict(), indent=4))
-            
         result = report.to_dict()
+
+        user_ref = db.collection("users").document(user_id)
+        user = user_ref.get()
+        user_data = user.to_dict()
+        
+        if not user_data.get("persistent", False):
+            result = generate_dummy_report(result)
+            
+        print(json.dumps(result, indent=4))
         return {"status": AnalysisStatusConstants.COMPLETED, "result": result}

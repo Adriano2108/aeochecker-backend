@@ -41,3 +41,49 @@ def generate_analysis_synthesis(company_name: str, score: float) -> str:
     
     else:
         return f"Exceptional! {company_name}'s AEO report obtained an outstanding score of {score:.1f}. Your company has mastered AI visibility strategies and is prominently featured in AI responses. Our minor suggestions will help maintain this exceptional performance." 
+
+def generate_dummy_report(original_report: dict) -> dict:
+    """
+    Generate a dummy report by preserving only essential fields from the original report.
+    
+    Args:
+        original_report: The complete report dictionary
+        
+    Returns:
+        A sanitized report with dummy values for sensitive content
+    """
+    # Fields to preserve from the original report
+    preserved_fields = ["url", "score", "title", "analysis_synthesis", "created_at", "job_id"]
+    
+    # Create a new report with preserved fields
+    dummy_report = {field: original_report.get(field) for field in preserved_fields if field in original_report}
+    
+    # Add dummy flag
+    dummy_report["dummy"] = True
+    
+    # Replace analysis_items with dummy entries
+    dummy_report["analysis_items"] = [
+        {
+            "id": "ai_presence",
+            "title": "AI Presence",
+            "score": 60.0,
+            "result": "This is a dummy result, sign up to access your detailed analysis results",
+            "completed": True
+        },
+        {
+            "id": "competitor_landscape",
+            "title": "Competitor Landscape",
+            "score": 30.0,
+            "result": "This is a dummy result, sign up to access your detailed analysis results",
+            "completed": True
+        },
+        {
+            "id": "strategy_review",
+            "title": "Strategy Review",
+            "score": 80.0,
+            "result": "This is a dummy result, sign up to access your detailed analysis results",
+            "completed": True
+        }
+    ]
+    
+    return dummy_report 

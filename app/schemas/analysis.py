@@ -33,6 +33,7 @@ class AnalysisResult(CamelCaseModel):
     url: HttpUrl
     score: float
     title: str
+    dummy: bool
     analysis_synthesis: str
     analysis_items: List[AnalysisTask]
     created_at: datetime
@@ -43,7 +44,8 @@ class AnalysisResult(CamelCaseModel):
                 "url": "https://example.com",
                 "score": 85.5,
                 "title": "Analysis Title",
-                "analysis_synthesis": "Analysis Synthesis",
+                "dummy": False,
+                "analysis_synthesis": "This is an example of the analysis synthesis",
                 "analysis_items": [
                     {"id": "task1", "title": "SEO Analysis", "result": "Good SEO practices found", "completed": True},
                     {"id": "task2", "title": "Performance Check", "result": "Site loads quickly", "completed": True},
