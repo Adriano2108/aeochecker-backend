@@ -222,7 +222,7 @@ class AnalysisService:
         user = user_ref.get()
         user_data = user.to_dict()
         
-        if not user_data.get("persistent", False):
+        if not user_data.get("persistent", False) or True:
             result = generate_dummy_report(result)
             
         print(json.dumps(result, indent=4))

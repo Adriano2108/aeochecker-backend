@@ -67,23 +67,118 @@ def generate_dummy_report(original_report: dict) -> dict:
             "id": "ai_presence",
             "title": "AI Presence",
             "score": 60.0,
-            "result": "This is a dummy result, sign up to access your detailed analysis results",
-            "completed": True
+            "completed": True,
+            "result": {
+                "openai": {
+                    "name": True,
+                    "product": True,
+                    "hq": False,
+                    "industry": False,
+                    "founded": False,
+                    "uncertainty": True,
+                    "score": 0
+                },
+                "anthropic": {
+                    "name": False,
+                    "product": False,
+                    "hq": False,
+                    "industry": True,
+                    "founded": True,
+                    "uncertainty": True,
+                    "score": 0
+                },
+                "gemini": {
+                    "name": True,
+                    "product": True,
+                    "hq": False,
+                    "industry": False,
+                    "founded": True,
+                    "uncertainty": False,
+                    "score": 0
+                },
+                "score": 0
+            },
         },
         {
             "id": "competitor_landscape",
             "title": "Competitor Landscape",
             "score": 30.0,
-            "result": "This is a dummy result, sign up to access your detailed analysis results",
-            "completed": True
+            "completed": True,
+            "result": {
+                "included": False,
+                "sorted_competitors": [
+                    {
+                        "name": "Apple",
+                        "count": 2
+                    },
+                    {
+                        "name": "Microsoft",
+                        "count": 1
+                    },
+                    {
+                        "name": "Amazon",
+                        "count": 1
+                    }
+                ],
+            },
         },
         {
             "id": "strategy_review",
             "title": "Strategy Review",
             "score": 80.0,
-            "result": "This is a dummy result, sign up to access your detailed analysis results",
-            "completed": True
+            "completed": True,
+            "result": {
+                "answerability": {
+                    "total_phrases": 0,
+                    "is_good_length_phrase": 0,
+                    "is_conversational_phrase": 0,
+                    "has_statistics_phrase": 0,
+                    "has_citation_phrase": 0,
+                    "has_citations_section": True,
+                    "score": 0
+                },
+                "knowledge_base": {
+                    "has_wikipedia_page": True,
+                    "wikipedia_url": None,
+                    "score": 0
+                },
+                "structured_data": {
+                    "schema_markup_present": True,
+                    "schema_types_found": [],
+                    "specific_schemas": {
+                        "FAQPage": True,
+                        "Article": False,
+                        "Review": False
+                    },
+                    "semantic_elements": {
+                        "present": True,
+                        "unique_types_found": ['h1', 'h2', 'h3', 'div'],
+                        "count_unique_types": 0,
+                        "all_tags_count": 0,
+                        "semantic_tags_count": 0,
+                        "non_semantic_tags_count": 0,
+                        "semantic_ratio": 0
+                    },
+                    "score": 0
+                },
+                "ai_crawler_accessibility": {
+                    "sitemap_found": True,
+                    "robots_txt_found": False,
+                    "pre_rendered_content": {
+                        "likely_pre_rendered": True,
+                        "text_length": 0,
+                        "js_framework_hint": False
+                    },
+                    "language": {
+                        "detected_languages": ['en'],
+                        "is_english": False,
+                        "english_version_url": None,
+                        "score": 0
+                    },
+                    "score": 0
+                },
+            },
         }
     ]
     
-    return dummy_report 
+    return dummy_report  
