@@ -134,7 +134,8 @@ class AnalysisService:
                 "analysis_synthesis": generate_analysis_synthesis(company_facts['name'], overall_score),
                 "analysis_items": analysis_items,
                 "created_at": datetime.now().isoformat(),
-                "job_id": job_id
+                "job_id": job_id,
+                "dummy": False
             }
 
             job_ref.update({

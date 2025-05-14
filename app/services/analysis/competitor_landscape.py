@@ -157,16 +157,52 @@ class CompetitorLandscapeAnalyzer(BaseAnalyzer):
         # Map back to the most frequent original casing
         ranked_competitors = []
         for normalized_name, count in sorted_normalized:
-            original_name = original_casing_map.get(normalized_name, normalized_name) # Fallback to normalized if somehow missing
+            original_name = original_casing_map.get(normalized_name, normalized_name)
             ranked_competitors.append((original_name, count))
 
         return ranked_competitors
 
     def _calculate_score(self, competitor_counter: Counter, company_name: str) -> tuple:
         """Calculate score based on whether company is included in competitor lists."""
+        score = 0
+        included = False
         normalized_company_name = company_name.lower()
-        included = any(key.lower() == normalized_company_name for key in competitor_counter.keys())
-        score = 10 if included else 0
+
+        # Find the company in the counter, considering case-insensitivity for keys
+        company_count = 0
+        found_company_key = None
+        for key, count in competitor_counter.items():
+            if key.lower() == normalized_company_name:
+                company_count = count
+                found_company_key = key # Keep the original casing for potential use
+                included = True
+                break
+        
+        if not included:
+            return 0, False
+
+        score += 50
+
+        # Ranking score
+        if found_company_key:
+            unique_sorted_counts = sorted(list(set(competitor_counter.values())), reverse=True)
+            try:
+                rank = unique_sorted_counts.index(company_count) + 1
+            except ValueError:
+                rank = float('inf') 
+            if rank == 1:
+                score += 50
+            elif rank == 2:
+                score += 40
+            elif rank == 3:
+                score += 30
+            elif rank == 4:
+                score += 20
+            elif rank == 5:
+                score += 10
+
+        print(f"Score: {score}")
+            
         return score, included
 
     async def analyze(self, company_facts: dict) -> tuple:

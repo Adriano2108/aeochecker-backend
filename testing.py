@@ -9,7 +9,7 @@ from app.services.analysis.utils.scrape_utils import scrape_website, _validate_a
 from app.services import AnalysisService
 
 async def main():
-    url = "https://www.nationalityguesser.com/"
+    url = "https://www.github.com/"
     validated_url = await _validate_and_get_best_url(url)
 
     ai_presence_analyzer = AiPresenceAnalyzer()
@@ -27,12 +27,12 @@ async def main():
 
     soup, all_text = await scrape_website(validated_url)
     company_facts = await scrape_company_facts(validated_url, soup, all_text)
-    ai_presence_score, ai_presence_result = await ai_presence_analyzer.analyze(company_facts)
+    competitor_landscape_score, competitors_result = await competitor_landscape_analyzer.analyze(company_facts)
     print(company_facts)
-    print(ai_presence_score)
-    print(json.dumps(ai_presence_result, indent=4))
+    print(competitor_landscape_score)
+    print(competitors_result.model_dump_json(indent=4))
 
-    # accessibility_score, accessibility_results = await strategy_review_analyzer._analyze_crawler_accessibility(validated_url, soup)
+    # accessibility_score, accessibility_results = await strategy_review_analyzer._analysze_crawler_accessibility(validated_url, soup)
     # print("Accessibility Score:", accessibility_score)
     # print("Accessibility Results:", json.dumps(accessibility_results, indent=4))
 
