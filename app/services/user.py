@@ -1,9 +1,10 @@
-from typing import Dict, Any, Optional, List
+from typing import Dict, Any, Optional, List, Literal
 from app.core.firebase import db, firebase_auth
 from firebase_admin import firestore
 from datetime import datetime
 from app.core.constants import UserCredits, UserTypes
 from app.schemas.analysis import ReportSummary
+from app.schemas.user import Subscription
 
 class UserService:
     """Service for user data management"""
@@ -134,6 +135,33 @@ class UserService:
             updated_user["email"] = None
             
         return updated_user 
+
+    @staticmethod
+    async def update_user_subscription_details(user_id: str, subscription_id: str, status: Literal["active", "cancelled"], plan_name: Literal["starter", "developer"]) -> bool:
+        """
+        Updates the user's subscription details in Firestore.
+        """
+        user_ref = db.collection("users").document(user_id)
+        user_doc = user_ref.get()
+
+        if not user_doc.exists:
+            print(f"User {user_id} not found. Cannot update subscription.")
+            return False
+
+        try:
+            subscription_payload = Subscription(
+                id=subscription_id,
+                status=status,
+                type=plan_name
+            )
+            
+            user_ref.update({"subscription": subscription_payload.model_dump()}) 
+            
+            print(f"Successfully updated subscription for user {user_id}: SID {subscription_id}, Status {status}, Plan {plan_name}")
+            return True
+        except Exception as e:
+            print(f"Error updating subscription for user {user_id}: {e}")
+            return False
 
     @staticmethod
     async def delete_user(user_id: str) -> bool:

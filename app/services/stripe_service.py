@@ -1,7 +1,8 @@
 import stripe
-from fastapi import HTTPException, Request, Header
+from fastapi import HTTPException, Request
+from typing import Optional
 from app.core.config import settings
-from app.schemas.user import UserInDB
+from app.services.user import UserService
 
 stripe.api_key = settings.STRIPE_SECRET_KEY
 
@@ -36,17 +37,24 @@ async def create_checkout_session(product_id: str, user_id: str, user_email: str
             cancel_url=settings.FRONTEND_URL,
             customer_email = user_email,
             metadata={
-                "user_id": user_id 
+                "user_id": user_id,
+                "plan_name": product_id
             },
+            subscription_data={
+                "metadata": {
+                    "user_id": user_id,
+                    "plan_name": product_id
+                }
+            }
         )
         return {"sessionId": checkout_session.id, "url": checkout_session.url}
     except Exception as e:
         print(f"Error creating Stripe checkout session: {e}")
         import traceback
-        traceback.print_exc() # This will print the full traceback to your console
+        traceback.print_exc()
         raise HTTPException(status_code=500, detail=str(e))
 
-async def handle_stripe_webhook(request: Request, user: UserInDB, stripe_signature: str = Header(None)):
+async def handle_stripe_webhook(request: Request, stripe_signature: Optional[str]):
     """
     Handles incoming Stripe webhooks.
     Verifies the event signature and processes the event.
@@ -68,38 +76,70 @@ async def handle_stripe_webhook(request: Request, user: UserInDB, stripe_signatu
     # Handle the event
     if event['type'] == 'checkout.session.completed':
         session = event['data']['object']
-        user_id = session.get('metadata', {}).get('user_id')
+        metadata = session.get('metadata', {})
+        user_id = metadata.get('user_id')
+        plan_name = metadata.get('plan_name')
         customer_id = session.get('customer')
         subscription_id = session.get('subscription')
 
-        print(f"Checkout session completed for user: {user_id}")
+        print(f"Checkout session completed for user: {user_id}, plan: {plan_name}")
         print(f"Customer ID: {customer_id}, Subscription ID: {subscription_id}")
-        # Example: update_user_subscription(user_id, customer_id, subscription_id, session['display_items'][0]['plan']['id'])
 
+        if user_id and subscription_id and plan_name:
+            if plan_name not in ["starter", "developer"]:
+                print(f"Error: Invalid plan_name '{plan_name}' from session metadata for user {user_id}.")
+            else:
+                await UserService.update_user_subscription_details(user_id, subscription_id, "active", plan_name)
+        else:
+            print(f"Error: Missing user_id, subscription_id, or plan_name in checkout.session.completed for session {session.get('id')}")
+        
     elif event['type'] == 'invoice.payment_succeeded':
         invoice = event['data']['object']
-        # Handle successful payment for recurring subscriptions
-        # customer_id = invoice.get('customer')
-        # subscription_id = invoice.get('subscription')
-        # plan_id = invoice['lines']['data'][0]['plan']['id']
-        # user_id = invoice.get('metadata', {}).get('user_id') # if you passed it during session creation or on customer
-        # Or retrieve user by customer_id/subscription_id
         print(f"Invoice payment succeeded: {invoice['id']}")
-        # Example: handle_recurring_payment(customer_id, subscription_id, plan_id)
         
     elif event['type'] == 'invoice.payment_failed':
         invoice = event['data']['object']
-        # Handle failed payment
-        # Notify the user, etc.
         print(f"Invoice payment failed: {invoice['id']}")
 
     elif event['type'] == 'customer.subscription.deleted':
-        subscription = event['data']['object']
-        # Handle subscription cancellation
-        print(f"Subscription deleted: {subscription['id']}")
-        # Example: update_user_on_cancellation(subscription['customer'])
+        subscription_obj = event['data']['object']
+        metadata = subscription_obj.get('metadata', {})
+        user_id = metadata.get('user_id')
+        plan_name = metadata.get('plan_name')
+        subscription_id = subscription_obj.get('id')
         
-    # ... handle other event types
+        print(f"Subscription {subscription_id} deleted for user: {user_id}, plan: {plan_name}")
+
+        if user_id and subscription_id and plan_name:
+            if plan_name not in ["starter", "developer"]:
+                print(f"Error: Invalid plan_name '{plan_name}' from subscription metadata for user {user_id}, subscription {subscription_id}.")
+            else:
+                await UserService.update_user_subscription_details(user_id, subscription_id, "cancelled", plan_name)
+        else:
+            print(f"Error: Missing user_id, subscription_id, or plan_name in customer.subscription.deleted for subscription {subscription_id}")
+
+    elif event['type'] == 'customer.subscription.updated':
+        subscription_obj = event['data']['object']
+        # Check for cancellation via 'incomplete_expired' or if status is 'canceled'
+        # Stripe might also send 'canceled' status directly if a subscription is canceled e.g. due to payment failures after retries
+        if subscription_obj.get('status') == 'incomplete_expired' or subscription_obj.get('cancel_at_period_end') is True or subscription_obj.get('status') == 'canceled':
+            metadata = subscription_obj.get('metadata', {})
+            user_id = metadata.get('user_id')
+            plan_name = metadata.get('plan_name')
+            subscription_id = subscription_obj.get('id')
+
+            print(f"Subscription {subscription_id} updated (likely cancelled/expired) for user: {user_id}, plan: {plan_name}, status: {subscription_obj.get('status')}")
+
+            if user_id and subscription_id and plan_name:
+                if plan_name not in ["starter", "developer"]:
+                    print(f"Error: Invalid plan_name '{plan_name}' from subscription metadata for user {user_id}, subscription {subscription_id}.")
+                else:
+                    await UserService.update_user_subscription_details(user_id, subscription_id, "cancelled", plan_name)
+            else:
+                print(f"Error: Missing user_id, subscription_id, or plan_name in customer.subscription.updated for subscription {subscription_id}")
+        else:
+            print(f"Unhandled subscription update status for {subscription_obj.get('id')}: {subscription_obj.get('status')}")
+        
     else:
         print(f"Unhandled event type {event['type']}")
 

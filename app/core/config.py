@@ -14,7 +14,8 @@ class Settings(BaseSettings):
     CORS_ORIGINS: list = [
         "http://localhost:3000",
         "https://aeochecker.vercel.app",
-        "https://aeochecker.ai"
+        "https://aeochecker.ai",
+        "https://www.aeochecker.ai"
     ]
 
     FRONTEND_URL: str = os.getenv("FRONTEND_URL", "https://aeochecker.ai")

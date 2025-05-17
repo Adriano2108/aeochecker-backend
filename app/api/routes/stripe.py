@@ -1,14 +1,21 @@
-from fastapi import APIRouter, Depends, HTTPException, Request, Header
+from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, Field
-from typing import Literal
+from typing import Literal, Optional
 from app.api.deps import get_current_user
 
 from app.services import stripe_service
 
+# Router for authenticated Stripe endpoints
 router = APIRouter(
     prefix="/stripe",
     tags=["stripe"],
     dependencies=[Depends(get_current_user)]
+)
+
+# Router for public Stripe webhook endpoint (no auth dependency here)
+webhook_router = APIRouter(
+    prefix="/stripe", # Assuming same prefix, adjust if needed in main.py
+    tags=["stripe"]   # Can share tags or have a different one
 )
 
 class CheckoutSessionRequest(BaseModel):
@@ -37,15 +44,17 @@ async def create_checkout_session_endpoint(request_data: CheckoutSessionRequest,
         # Log the exception e
         raise HTTPException(status_code=500, detail="An unexpected error occurred.")
 
-@router.post("/webhook", tags=["stripe"])
-async def stripe_webhook_endpoint(request: Request, user=Depends(get_current_user), stripe_signature: str = Header(None)):
+# Move webhook to the new router
+@webhook_router.post("/webhook", tags=["stripe"], dependencies=[])
+async def stripe_webhook_endpoint(request: Request):
     """
     Stripe webhook endpoint.
     Stripe will send events to this endpoint.
     The `Stripe-Signature` header is used to verify the event.
     """
+    stripe_signature = request.headers.get("Stripe-Signature")
     try:
-        return await stripe_service.handle_stripe_webhook(request, user, stripe_signature)
+        return await stripe_service.handle_stripe_webhook(request, stripe_signature)
     except HTTPException as e:
         raise e
     except Exception as e:
