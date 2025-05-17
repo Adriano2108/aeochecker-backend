@@ -44,7 +44,6 @@ class AnalysisService:
         job_ref = db.collection("analysis_jobs").document(job_id)
 
         print(f"Background task started for job_id: {job_id}, url: {url}")
-        # Note: The original initial job_ref.set is removed as it's handled by create_analysis_job
         
         try:
             validated_url = await _validate_and_get_best_url(url)
@@ -181,6 +180,7 @@ class AnalysisService:
         
         return {
             "job_id": job_id,
+            "error": job_data.get("error", None),
             "status": job_data.get("status"),
             "progress": job_data.get("progress", 0)
         }
@@ -222,7 +222,7 @@ class AnalysisService:
         user = user_ref.get()
         user_data = user.to_dict()
         
-        if not user_data.get("persistent", False) or True:
+        if not user_data.get("persistent", False):
             result = generate_dummy_report(result)
             
         print(json.dumps(result, indent=4))

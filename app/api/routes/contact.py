@@ -5,7 +5,7 @@ from app.schemas.user import UserInDB
 
 router = APIRouter(
     prefix="/contact",
-    tags=["contact"]
+    tags=["contact"],
 )
 
 @router.post(
