@@ -8,6 +8,7 @@ from app.core.constants import AnalysisStatus as AnalysisStatusConstants
 from app.services.analysis import AiPresenceAnalyzer, CompetitorLandscapeAnalyzer, StrategyReviewAnalyzer
 from app.services.analysis.utils.scrape_utils import scrape_website, scrape_company_facts, _validate_and_get_best_url
 from app.services.analysis.utils.response import generate_analysis_synthesis, generate_dummy_report
+from app.services.stats_service import StatsService
 
 class AnalysisService:
     """Service for analyzing websites and generating reports"""
@@ -19,6 +20,11 @@ class AnalysisService:
         """
         job_id = str(uuid.uuid4())
         job_ref = db.collection("analysis_jobs").document(job_id)
+
+        try:
+            await StatsService.increment_job_created_count()
+        except Exception as e:
+            print(f"Failed to log job creation for job {job_id}: {e}")
         
         initial_job_data = {
             "url": url,

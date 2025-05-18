@@ -3,6 +3,7 @@ from fastapi import HTTPException, Request
 from typing import Optional
 from app.core.config import settings
 from app.services.user import UserService
+from app.services.stats_service import StatsService
 
 stripe.api_key = settings.STRIPE_SECRET_KEY
 
@@ -20,6 +21,11 @@ async def create_checkout_session(product_id: str, user_id: str, user_email: str
     print(f"Checkout function called with product_id: {product_id}, user_id: {user_id}, user_email: {user_email}")
     if product_id not in PRODUCT_TO_PRICE_MAP:
         raise HTTPException(status_code=400, detail="Invalid product ID")
+    
+    try:
+        await StatsService.increment_checkout_created_count(product_id)
+    except Exception as e:
+        print(f"Failed to log checkout creation for product {product_id}: {e}")
 
     price_id = PRODUCT_TO_PRICE_MAP[product_id]
     
