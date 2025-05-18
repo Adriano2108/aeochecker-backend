@@ -135,7 +135,7 @@ class UserService:
         return updated_user 
 
     @staticmethod
-    async def update_user_subscription_details(user_id: str, subscription_id: str, status: Literal["active", "cancelled"], plan_name: Literal["starter", "developer"]) -> bool:
+    async def update_user_subscription_details(user_id: str, subscription_id: str, status: Literal["active", "cancelled"], plan_name: Literal["starter", "developer"], customer_id: Optional[str] = None) -> bool:
         """
         Updates the user's subscription details in Firestore.
         """
@@ -150,7 +150,8 @@ class UserService:
             subscription_payload = Subscription(
                 id=subscription_id,
                 status=status,
-                type=plan_name
+                type=plan_name,
+                customer_id=customer_id
             )
             
             user_ref.update({"subscription": subscription_payload.model_dump()}) 

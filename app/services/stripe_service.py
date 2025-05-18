@@ -54,6 +54,33 @@ async def create_checkout_session(product_id: str, user_id: str, user_email: str
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=str(e))
 
+async def create_portal_session(user_id: str):
+    """
+    Creates a Stripe Customer Portal session for subscription management.
+    Requires the user_id to find their Stripe customer ID.
+    """
+    try:
+        user_data = await UserService.get_user_data(user_id)
+        
+        if not user_data or not user_data.get("subscription") or not user_data.get("subscription", {}).get("customer_id"):
+            raise HTTPException(status_code=404, detail="No active subscription found for this user")
+        
+        customer_id = user_data.get("subscription", {}).get("customer_id")
+        
+        portal_session = stripe.billing_portal.Session.create(
+            customer=customer_id,
+            return_url=settings.FRONTEND_URL,
+        )
+        
+        return portal_session
+    except HTTPException as e:
+        raise e
+    except Exception as e:
+        print(f"Error creating Stripe portal session: {e}")
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=str(e))
+
 async def handle_stripe_webhook(request: Request, stripe_signature: Optional[str]):
     """
     Handles incoming Stripe webhooks.
@@ -85,13 +112,13 @@ async def handle_stripe_webhook(request: Request, stripe_signature: Optional[str
         print(f"Checkout session completed for user: {user_id}, plan: {plan_name}")
         print(f"Customer ID: {customer_id}, Subscription ID: {subscription_id}")
 
-        if user_id and subscription_id and plan_name:
+        if user_id and subscription_id and plan_name and customer_id:
             if plan_name not in ["starter", "developer"]:
                 print(f"Error: Invalid plan_name '{plan_name}' from session metadata for user {user_id}.")
             else:
-                await UserService.update_user_subscription_details(user_id, subscription_id, "active", plan_name)
+                await UserService.update_user_subscription_details(user_id, subscription_id, "active", plan_name, customer_id)
         else:
-            print(f"Error: Missing user_id, subscription_id, or plan_name in checkout.session.completed for session {session.get('id')}")
+            print(f"Error: Missing user_id, subscription_id, plan_name, or customer_id in checkout.session.completed for session {session.get('id')}")
         
     elif event['type'] == 'invoice.payment_succeeded':
         invoice = event['data']['object']
@@ -107,6 +134,7 @@ async def handle_stripe_webhook(request: Request, stripe_signature: Optional[str
         user_id = metadata.get('user_id')
         plan_name = metadata.get('plan_name')
         subscription_id = subscription_obj.get('id')
+        customer_id = subscription_obj.get('customer')
         
         print(f"Subscription {subscription_id} deleted for user: {user_id}, plan: {plan_name}")
 
@@ -114,7 +142,19 @@ async def handle_stripe_webhook(request: Request, stripe_signature: Optional[str
             if plan_name not in ["starter", "developer"]:
                 print(f"Error: Invalid plan_name '{plan_name}' from subscription metadata for user {user_id}, subscription {subscription_id}.")
             else:
-                await UserService.update_user_subscription_details(user_id, subscription_id, "cancelled", plan_name)
+                user_data = await UserService.get_user_data(user_id)
+                existing_customer_id = None
+                if user_data and user_data.get("subscription"):
+                    existing_customer_id = user_data.get("subscription", {}).get("customer_id")
+                final_customer_id = customer_id or existing_customer_id
+                
+                await UserService.update_user_subscription_details(
+                    user_id, 
+                    subscription_id, 
+                    "cancelled", 
+                    plan_name, 
+                    final_customer_id
+                )
         else:
             print(f"Error: Missing user_id, subscription_id, or plan_name in customer.subscription.deleted for subscription {subscription_id}")
 
@@ -127,6 +167,7 @@ async def handle_stripe_webhook(request: Request, stripe_signature: Optional[str
             user_id = metadata.get('user_id')
             plan_name = metadata.get('plan_name')
             subscription_id = subscription_obj.get('id')
+            customer_id = subscription_obj.get('customer')
 
             print(f"Subscription {subscription_id} updated (likely cancelled/expired) for user: {user_id}, plan: {plan_name}, status: {subscription_obj.get('status')}")
 
@@ -134,7 +175,19 @@ async def handle_stripe_webhook(request: Request, stripe_signature: Optional[str
                 if plan_name not in ["starter", "developer"]:
                     print(f"Error: Invalid plan_name '{plan_name}' from subscription metadata for user {user_id}, subscription {subscription_id}.")
                 else:
-                    await UserService.update_user_subscription_details(user_id, subscription_id, "cancelled", plan_name)
+                    user_data = await UserService.get_user_data(user_id)
+                    existing_customer_id = None
+                    if user_data and user_data.get("subscription"):
+                        existing_customer_id = user_data.get("subscription", {}).get("customer_id")
+                    final_customer_id = customer_id or existing_customer_id
+                    
+                    await UserService.update_user_subscription_details(
+                        user_id, 
+                        subscription_id, 
+                        "cancelled", 
+                        plan_name, 
+                        final_customer_id
+                    )
             else:
                 print(f"Error: Missing user_id, subscription_id, or plan_name in customer.subscription.updated for subscription {subscription_id}")
         else:

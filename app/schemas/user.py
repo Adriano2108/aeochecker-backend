@@ -12,6 +12,7 @@ class Subscription(CamelCaseModel):
     id: str
     status: Literal["active", "cancelled"]
     type: Literal["starter", "developer"]
+    customer_id: Optional[str] = None
 
 class UserInDB(UserBase):
     uid: str
