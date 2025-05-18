@@ -10,13 +10,6 @@ class UserCredits:
     PERSISTENT_USER = 3
     ANONYMOUS_USER = 1
     PREMIUM_USER = 10
-
-class UserTypes(str, Enum):
-    """Constants related to user types"""
-    ANONYMOUS = "anonymous"
-    PERSISTENT = "persistent"
-    PREMIUM = "premium"
-
 class AnalysisStatus(str, Enum):
     """Constants related to analysis status"""
     PENDING = "pending"

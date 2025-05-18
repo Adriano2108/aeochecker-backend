@@ -35,7 +35,11 @@ class ContactMessageInDB(ContactMessageBase):
                     "createdAt": "2023-07-01T10:00:00.000Z",
                     "reports": ["report1", "report2"],
                     "persistent": False,
-                    "userType": "anonymous"
+                    "subscription": {
+                        "id": "sub_1234567890",
+                        "status": "active",
+                        "type": "starter"
+                    }
                 },
                 "email": None,
                 "message": "Hello, I have a question.",

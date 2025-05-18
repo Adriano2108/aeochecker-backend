@@ -2,7 +2,7 @@ from typing import Dict, Any, Optional, List, Literal
 from app.core.firebase import db, firebase_auth
 from firebase_admin import firestore
 from datetime import datetime
-from app.core.constants import UserCredits, UserTypes
+from app.core.constants import UserCredits
 from app.schemas.analysis import ReportSummary
 from app.schemas.user import Subscription
 
@@ -67,7 +67,6 @@ class UserService:
         if not user_doc.exists:
             current_time = datetime.now()
 
-            user_type = UserTypes.PERSISTENT if email else UserTypes.ANONYMOUS
             user_credits = UserCredits.PERSISTENT_USER if email else UserCredits.ANONYMOUS_USER
             email_value = None if not email or email == "" else email
             username_value = username or (email.split("@")[0] if email else f"User_{user_id[:6]}")
@@ -77,7 +76,6 @@ class UserService:
                 "email": email_value,
                 "username": username_value,
                 "credits": user_credits,
-                "user_type": user_type,
                 "created_at": current_time,
                 "reports": []
             }

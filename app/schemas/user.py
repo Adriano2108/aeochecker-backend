@@ -1,7 +1,7 @@
 from pydantic import EmailStr
 from typing import List, Optional, Literal
 from datetime import datetime
-from app.core.constants import UserCredits, UserTypes
+from app.core.constants import UserCredits
 from app.core.models import CamelCaseModel
 
 class UserBase(CamelCaseModel):
@@ -19,7 +19,6 @@ class UserInDB(UserBase):
     created_at: datetime
     reports: Optional[List[str]] = []
     persistent: Optional[bool] = False
-    user_type: UserTypes
     subscription: Optional[Subscription] = None
     class Config:
         json_schema_extra = {
@@ -31,7 +30,6 @@ class UserInDB(UserBase):
                 "created_at": "2023-07-01T10:00:00.000Z",
                 "reports": ["report1", "report2"],
                 "persistent": False,
-                "user_type": UserTypes.PERSISTENT,
                 "subscription": {
                     "id": "sub_1234567890",
                     "status": "active",
