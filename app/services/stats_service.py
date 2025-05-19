@@ -45,4 +45,23 @@ class StatsService:
                 print("Initialized job_created_count for analysis_jobs")
             else:
                 print(f"Error incrementing job_created_count: {e}")
-                raise 
+                raise
+
+    @staticmethod
+    async def get_analysis_job_count() -> int:
+        """
+        Retrieves the job_created_count from the 'stats' collection under a document named 'analysis_jobs'.
+        Returns 0 if the document or field does not exist.
+        """
+        stats_ref = db.collection("stats").document("analysis_jobs")
+        
+        try:
+            doc = await stats_ref.get()
+            if doc.exists:
+                data = doc.to_dict()
+                return data.get("job_created_count", 0)
+            else:
+                return 0
+        except Exception as e:
+            print(f"Error retrieving job_created_count: {e}")
+            return 0

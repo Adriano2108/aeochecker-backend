@@ -1,5 +1,5 @@
 from fastapi import APIRouter
-from app.api.routes import analysis, user, contact, stripe
+from app.api.routes import analysis, user, contact, stripe, stats
 
 api_router = APIRouter()
 
@@ -8,4 +8,5 @@ api_router.include_router(analysis.router)
 api_router.include_router(user.router)
 api_router.include_router(contact.router)
 api_router.include_router(stripe.router)
-api_router.include_router(stripe.webhook_router) 
+api_router.include_router(stripe.webhook_router)
+api_router.include_router(stats.router) 
