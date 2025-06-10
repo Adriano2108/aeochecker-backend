@@ -1,0 +1,9 @@
+services:
+  aeochecker-backend:
+    build: .
+    env_file:
+      - .env
+    ports:
+      - "8080:8000"
+    volumes:
+      - /Users/adrianobarbet/Desktop/Coding/WebDev/aeochecker/Keys/aeochecker-ai-seo-firebase-adminsdk-fbsvc-5f2f1b78d8.json:/app/firebase-key.json:ro

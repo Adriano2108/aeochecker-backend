@@ -39,6 +39,15 @@ API docs are available at:
 - Swagger UI: http://localhost:8000/docs
 - ReDoc: http://localhost:8000/redoc
 
+## Building and Running the container:
+
+# Build and run the container with your .env file
+- docker compose up --build
+# Run in detached mode
+- docker compose up -d --build
+# Stop the container
+- docker compose down
+
 ## API Endpoints
 
 ### Website Analysis
