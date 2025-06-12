@@ -4,7 +4,8 @@ FROM python:3.11-slim
 # Set environment variables
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
-    PYTHONPATH=/app
+    PYTHONPATH=/app \
+    PORT=8000
 
 # Set work directory
 WORKDIR /app
@@ -30,12 +31,12 @@ RUN adduser --disabled-password --gecos '' --shell /bin/bash user \
     && chown -R user:user /app
 USER user
 
-# Expose port
-EXPOSE 8000
+# Expose port (will be overridden by Cloud Run)
+EXPOSE $PORT
 
-# Health check
+# Health check that uses the PORT environment variable
 HEALTHCHECK --interval=30s --timeout=30s --start-period=5s --retries=3 \
-    CMD python -c "import requests; requests.get('http://localhost:8000/health', timeout=10)"
+    CMD python -c "import requests, os; requests.get(f'http://localhost:{os.environ.get(\"PORT\", \"8000\")}/health', timeout=10)"
 
-# Run the application
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"] 
+# Run the application using PORT environment variable
+CMD uvicorn app.main:app --host 0.0.0.0 --port $PORT 

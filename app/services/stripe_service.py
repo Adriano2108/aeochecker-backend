@@ -23,7 +23,7 @@ async def create_checkout_session(product_id: str, user_id: str, user_email: str
         raise HTTPException(status_code=400, detail="Invalid product ID")
     
     try:
-        await StatsService.increment_checkout_created_count(product_id)
+        StatsService.increment_checkout_created_count(product_id)
     except Exception as e:
         print(f"Failed to log checkout creation for product {product_id}: {e}")
 

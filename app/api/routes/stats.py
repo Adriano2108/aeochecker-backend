@@ -12,5 +12,5 @@ async def get_analysis_count():
     """
     Retrieve the total count of website analyses performed.
     """
-    count = await StatsService.get_analysis_job_count()
+    count = StatsService.get_analysis_job_count()
     return AnalysisCountResponse(count=count) 

@@ -15,12 +15,13 @@ class Settings(BaseSettings):
         "http://localhost:3000",
         "https://aeochecker.vercel.app",
         "https://aeochecker.ai",
-        "https://www.aeochecker.ai"
+        "https://www.aeochecker.ai",
     ]
 
     FRONTEND_URL: str = os.getenv("FRONTEND_URL", "https://aeochecker.ai")
     
     FIREBASE_SERVICE_ACCOUNT_KEY_PATH: str = os.getenv("FIREBASE_SERVICE_ACCOUNT_KEY_PATH", "")
+    FIREBASE_SERVICE_ACCOUNT_JSON: str = os.getenv("FIREBASE_SERVICE_ACCOUNT_JSON", "")
     
     OPENAI_API_KEY: str = os.getenv("OPENAI_API_KEY", "")
     ANTHROPIC_API_KEY: str = os.getenv("ANTHROPIC_API_KEY", "")
