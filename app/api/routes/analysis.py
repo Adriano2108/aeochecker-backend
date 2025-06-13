@@ -32,7 +32,7 @@ async def analyze_site(request: AnalyzeRequest, background_tasks: BackgroundTask
         user_id=user["uid"]
     )
     
-    return initial_job_data
+    return AnalysisStatus(**initial_job_data)
 
 @router.get("/status/{job_id}", response_model=AnalysisStatus)
 async def job_status(job_id: str, user=Depends(get_current_user)):
@@ -53,7 +53,7 @@ async def job_status(job_id: str, user=Depends(get_current_user)):
             detail="You don't have permission to access this job"
         )
     
-    return status_data
+    return AnalysisStatus(**status_data)
 
 @router.get("/reports/{job_id}", response_model=AnalysisResult)
 async def get_report(job_id: str, user=Depends(get_current_user)):

@@ -67,9 +67,8 @@ class AiPresenceAnalyzer(BaseAnalyzer):
     def _score_llm_response(company_facts: dict, response: str) -> Tuple[float, dict]:
         score = 0
         details = {}
-        response_lower = response.lower()  # Convert response to lowercase once
+        response_lower = response.lower()
 
-        # Awareness
         if company_facts['name'] and company_facts['name'].lower() in response_lower:
             score += 20
             details['name'] = True

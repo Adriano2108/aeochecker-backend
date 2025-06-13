@@ -9,6 +9,7 @@ from app.services.analysis import AiPresenceAnalyzer, CompetitorLandscapeAnalyze
 from app.services.analysis.utils.scrape_utils import scrape_website, scrape_company_facts, _validate_and_get_best_url
 from app.services.analysis.utils.response import generate_analysis_synthesis, generate_dummy_report
 from app.services.stats_service import StatsService
+import asyncio
 
 class AnalysisService:
     """Service for analyzing websites and generating reports"""
@@ -22,7 +23,7 @@ class AnalysisService:
         job_ref = db.collection("analysis_jobs").document(job_id)
 
         try:
-            await StatsService.increment_job_created_count()
+            StatsService.increment_job_created_count()
         except Exception as e:
             print(f"Failed to log job creation for job {job_id}: {e}")
         
@@ -48,13 +49,49 @@ class AnalysisService:
         Updates Firestore with progress and final status/result.
         """
         job_ref = db.collection("analysis_jobs").document(job_id)
-
-        print(f"Background task started for job_id: {job_id}, url: {url}")
         
         try:
+            # Step 1: Validate URL (progress 0.10)
+            validated_url = await cls._validate_url(job_id, url, job_ref)
+            if not validated_url:
+                return
+            
+            # Step 2: Scrape website & company facts (progress 0.20)
+            soup, all_text, company_facts = await cls._scrape_website_data(job_id, validated_url, job_ref)
+            if not company_facts:
+                return
+            
+            # Step 3: Run analyses in parallel (progress +0.20 each)
+            analysis_scores, analysis_results = await cls._run_parallel_analyses(job_id, company_facts, validated_url, soup, all_text, job_ref)
+            if not analysis_scores:
+                return
+            
+            # Step 4: Calculate overall score
+            overall_score = cls._calculate_overall_score(analysis_scores)
+            
+            # Step 5: Build analysis items
+            analysis_items = cls._build_analysis_items(analysis_scores, analysis_results)
+            
+            # Step 6: Finalize report (deduct credit & save)
+            await cls._finalize_report(job_id, user_id, validated_url, overall_score, company_facts, analysis_items, job_ref)
+            
+        except Exception as e:
+            print(f"DEBUG: Exception caught in perform_analysis_task for job {job_id}: {str(e)}")
+            job_ref.update({
+                "status": AnalysisStatusConstants.FAILED,
+                "error": str(e),
+                "completed_at": datetime.now().isoformat()
+            })
+            print(f"Error analyzing website for job {job_id}: {str(e)}")
+
+    @classmethod
+    async def _validate_url(cls, job_id: str, url: str, job_ref) -> str:
+        """Validate and get the best URL for analysis."""
+        try:
             validated_url = await _validate_and_get_best_url(url)
-            if validated_url != url:
-                url = validated_url
+            job_ref.update({"progress": 0.10})
+            print(f"Validated URL for job {job_id}: {validated_url}")
+            return validated_url
         except Exception as e:
             print(f"Error validating URL for job {job_id}: {str(e)}")
             job_ref.update({
@@ -62,111 +99,163 @@ class AnalysisService:
                 "error": str(e),
                 "completed_at": datetime.now().isoformat()
             })
-            return 
+            return None
+
+    @classmethod
+    async def _scrape_website_data(cls, job_id: str, url: str, job_ref) -> tuple:
+        """Scrape website content and extract company facts."""
+        # Scrape website
+        soup, all_text = await scrape_website(url)
+        print(f"Scraped website for job {job_id}")
         
-        print(f"Validated URL for job {job_id}: {url}")
-        
-        try:
-            # Instantiate analyzers
-            ai_presence_analyzer = AiPresenceAnalyzer()
-            competitor_landscape_analyzer = CompetitorLandscapeAnalyzer()
-            strategy_review_analyzer = StrategyReviewAnalyzer()
-
-            # Scrape website
-            print(f"Scraping website for job {job_id}...")
-            soup, all_text = await scrape_website(url)
-            print(f"Scraped website for job {job_id}")
-            if soup is None:
-                print(f"Failed to scrape website for job {job_id}.")
-                job_ref.update({
-                    "status": AnalysisStatusConstants.FAILED,
-                    "error": "Failed to scrape website. Please try again later.",
-                    "completed_at": datetime.now().isoformat()
-                })
-                return
-
-            print(f"Scraping company facts for job {job_id}...")
-            company_facts = await scrape_company_facts(url, soup, all_text)
-            print(f"Company facts for job {job_id}: {company_facts}")
-            if company_facts["name"] == "":
-                print(f"No information found for website in job {job_id}.")
-                job_ref.update({
-                    "status": AnalysisStatusConstants.FAILED,
-                    "error": "No information found about your website. You need to add name tags, meta tags, and other basic structured data to your website to run this analysis.",
-                    "completed_at": datetime.now().isoformat()
-                })
-                return
-                
-            # Run analyses
-            ai_presence_score, ai_presence_result = await ai_presence_analyzer.analyze(company_facts)
-            job_ref.update({"progress": 0.5})
-
-            competitor_landscape_score, competitors_result = await competitor_landscape_analyzer.analyze(company_facts)
-            job_ref.update({"progress": 0.75})
-
-            strategy_review_score, strategy_review_result = await strategy_review_analyzer.analyze(company_facts["name"], url, soup, all_text)
-            
-            overall_score = (ai_presence_score + competitor_landscape_score + strategy_review_score) / 3
-
-            analysis_items = [
-                {
-                    "id": "ai_presence",
-                    "title": "AI Presence",
-                    "score": ai_presence_score,
-                    "result": ai_presence_result,
-                    "completed": True
-                },
-                {
-                    "id": "competitor_landscape",
-                    "title": "Competitor Landscape",
-                    "score": competitor_landscape_score,
-                    "result": competitors_result.model_dump(),
-                    "completed": True
-                },
-                {
-                    "id": "strategy_review",
-                    "title": "Strategy Review",
-                    "score": strategy_review_score,
-                    "result": strategy_review_result,
-                    "completed": True
-                },
-            ]
-            
-            result_data = {
-                "url": url,
-                "score": overall_score,
-                "title": company_facts['name'],
-                "analysis_synthesis": generate_analysis_synthesis(company_facts['name'], overall_score),
-                "analysis_items": analysis_items,
-                "created_at": datetime.now().isoformat(),
-                "job_id": job_id,
-                "dummy": False
-            }
-
+        if soup is None:
+            print(f"Failed to scrape website for job {job_id}.")
             job_ref.update({
-                "status": AnalysisStatusConstants.COMPLETED,
-                "progress": 1.0,
+                "status": AnalysisStatusConstants.FAILED,
+                "error": "Failed to scrape website. Please try again later.",
                 "completed_at": datetime.now().isoformat()
             })
-            
-            # Deduct a credit from the user
-            user_ref = db.collection("users").document(user_id)
-            user_ref.update({"credits": firestore.Increment(-1)})
-            
-            # Save the report to the user's reports collection
-            report_ref = db.collection("users").document(user_id).collection("reports").document(job_id)
-            report_ref.set(result_data)
+            return None, None, None
+        
+        # Extract company facts
+        company_facts = await scrape_company_facts(url, soup, all_text)
+        print(f"Company facts for job {job_id}: {company_facts}")
+        
+        if company_facts["name"] == "":
+            print(f"No information found for website in job {job_id}.")
+            job_ref.update({
+                "status": AnalysisStatusConstants.FAILED,
+                "error": "No information found about your website. You need to add name tags, meta tags, and other basic structured data to your website to run this analysis.",
+                "completed_at": datetime.now().isoformat()
+            })
+            return None, None, None
+        
+        job_ref.update({"progress": 0.20})
+        print(f"Progress updated to 0.20 for job {job_id}")
+        
+        return soup, all_text, company_facts
 
-            print(f"Analysis for job {job_id} completed. Report saved: {json.dumps(result_data, indent=4)}")
+    @classmethod
+    async def _run_parallel_analyses(cls, job_id: str, company_facts: dict, url: str, soup, all_text: str, job_ref) -> tuple:
+        """Run all three analyses in parallel and track progress."""
+        # Instantiate analyzers
+        ai_presence_analyzer = AiPresenceAnalyzer()
+        competitor_landscape_analyzer = CompetitorLandscapeAnalyzer()
+        strategy_review_analyzer = StrategyReviewAnalyzer()
+
+        # Create tasks for each analysis
+        ai_task = asyncio.create_task(ai_presence_analyzer.analyze(company_facts))
+        competitor_task = asyncio.create_task(competitor_landscape_analyzer.analyze(company_facts))
+        strategy_task = asyncio.create_task(
+            strategy_review_analyzer.analyze(company_facts["name"], url, soup, all_text)
+        )
+
+        try:
+            results = await asyncio.gather(ai_task, competitor_task, strategy_task, return_exceptions=True)
             
+            task_names = ["ai_presence", "competitor_landscape", "strategy_review"]
+            analysis_scores: Dict[str, float] = {}
+            analysis_results: Dict[str, Any] = {}
+            
+            for i, result in enumerate(results):
+                analysis_name = task_names[i]
+                
+                if isinstance(result, Exception):
+                    job_ref.update({
+                        "status": AnalysisStatusConstants.FAILED,
+                        "error": f"{analysis_name} analysis failed: {str(result)}",
+                        "completed_at": datetime.now().isoformat(),
+                    })
+                    print(f"Error during {analysis_name} analysis for job {job_id}: {str(result)}")
+                    return None, None
+                
+                score, analysis_result = result
+                analysis_scores[analysis_name] = score
+                analysis_results[analysis_name] = analysis_result
+                
+                # Update progress (+0.20 for each completed analysis)
+                progress = 0.20 + (i + 1) * 0.20
+                job_ref.update({"progress": min(progress, 0.80)})
+                print(f"Progress updated to {min(progress, 0.80)} for job {job_id} - {analysis_name} completed")
+                
         except Exception as e:
             job_ref.update({
                 "status": AnalysisStatusConstants.FAILED,
-                "error": str(e),
-                "completed_at": datetime.now().isoformat()
+                "error": f"Analysis execution failed: {str(e)}",
+                "completed_at": datetime.now().isoformat(),
             })
-            print(f"Error analyzing website for job {job_id}: {str(e)}")
-    
+            print(f"Error during analysis execution for job {job_id}: {str(e)}")
+            return None, None
+
+        return analysis_scores, analysis_results
+
+    @classmethod
+    def _calculate_overall_score(cls, analysis_scores: Dict[str, float]) -> float:
+        """Calculate the overall analysis score."""
+        return sum(analysis_scores.values()) / len(analysis_scores)
+
+    @classmethod
+    def _build_analysis_items(cls, analysis_scores: Dict[str, float], analysis_results: Dict[str, Any]) -> list:
+        """Build the analysis items structure for the report."""
+        analysis_items = [
+            {
+                "id": "ai_presence",
+                "title": "AI Presence",
+                "score": analysis_scores["ai_presence"],
+                "result": analysis_results["ai_presence"],
+                "completed": True
+            },
+            {
+                "id": "competitor_landscape",
+                "title": "Competitor Landscape",
+                "score": analysis_scores["competitor_landscape"],
+                "result": analysis_results["competitor_landscape"].model_dump() if hasattr(analysis_results["competitor_landscape"], 'model_dump') else analysis_results["competitor_landscape"],
+                "completed": True
+            },
+            {
+                "id": "strategy_review",
+                "title": "Strategy Review",
+                "score": analysis_scores["strategy_review"],
+                "result": analysis_results["strategy_review"],
+                "completed": True
+            },
+        ]
+        
+        # Serialize to ensure all nested Pydantic models are properly converted
+        return json.loads(json.dumps(analysis_items, default=str))
+
+    @classmethod
+    async def _finalize_report(cls, job_id: str, user_id: str, url: str, overall_score: float, company_facts: dict, analysis_items: list, job_ref):
+        """Deduct credit and save the final report."""
+        result_data = {
+            "url": url,
+            "score": overall_score,
+            "title": company_facts['name'],
+            "analysis_synthesis": generate_analysis_synthesis(company_facts['name'], overall_score),
+            "analysis_items": analysis_items,
+            "created_at": datetime.now().isoformat(),
+            "job_id": job_id,
+            "dummy": False
+        }
+
+        # Update job status to completed
+        job_ref.update({
+            "status": AnalysisStatusConstants.COMPLETED,
+            "progress": 1.0,
+            "completed_at": datetime.now().isoformat(),
+        })
+        print(f"Analysis completed for job {job_id}")
+        
+        # Deduct credit from user
+        user_ref = db.collection("users").document(user_id)
+        user_ref.update({"credits": firestore.Increment(-1)})
+        print(f"Credit deducted for job {job_id}")
+        
+        # Save report to user's reports collection
+        report_ref = db.collection("users").document(user_id).collection("reports").document(job_id)
+        report_ref.set(result_data)
+        print(f"Report saved for job {job_id}")
+
     @staticmethod
     async def get_job_status(job_id: str, user_id: str) -> Dict[str, Any]:
         """

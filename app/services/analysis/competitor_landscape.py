@@ -212,8 +212,6 @@ class CompetitorLandscapeAnalyzer(BaseAnalyzer):
         # 1. Query LLMs for competitors
         llm_responses = await self._query_llms_competitors(company_facts)
 
-        print(f"LLM responses: {llm_responses}")
-        
         # 2. Extract competitor lists from responses
         competitors_lists = self._extract_all_competitors(llm_responses)
         

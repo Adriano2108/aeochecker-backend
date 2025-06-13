@@ -60,6 +60,7 @@ class AnalysisStatus(CamelCaseModel):
     job_id: str
     status: AnalysisStatusConstants
     progress: Optional[float] = None
+    error: Optional[str] = None
     
     class Config:
         json_schema_extra = {
@@ -67,6 +68,7 @@ class AnalysisStatus(CamelCaseModel):
                 "job_id": "abc123",
                 "status": AnalysisStatusConstants.PROCESSING,
                 "progress": 0.75,
+                "error": None
             }
         }
 

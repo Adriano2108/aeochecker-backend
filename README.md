@@ -41,12 +41,15 @@ API docs are available at:
 
 ## Building and Running the container:
 
-# Build and run the container with your .env file
+# Build and run the container with your .env file (better, can view the logs)
 - docker compose up --build
-# Run in detached mode
+# Run in detached mode (no logs, in the background)
 - docker compose up -d --build
 # Stop the container
 - docker compose down
+
+## To push the docker container to google artefacts/google cloud run:
+- 
 
 ## API Endpoints
 

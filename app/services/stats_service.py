@@ -14,7 +14,6 @@ class StatsService:
             stats_ref.update({
                 "checkout_created_count": firestore.Increment(1),
             })
-            print(f"Incremented checkout_created_count for product: {product_id}")
         except Exception as e:
             if "No document to update" in str(e) or "NOT_FOUND" in str(e):
                 stats_ref.set({
@@ -36,7 +35,6 @@ class StatsService:
             stats_ref.update({
                 "job_created_count": firestore.Increment(1),
             })
-            print("Incremented job_created_count for analysis_jobs")
         except Exception as e:
             if "No document to update" in str(e) or "NOT_FOUND" in str(e):
                 stats_ref.set({
