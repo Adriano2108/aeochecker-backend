@@ -48,8 +48,8 @@ API docs are available at:
 # Stop the container
 - docker compose down
 
-## To push the docker container to google artefacts/google cloud run:
-- 
+## To push the docker container to google cloud run:
+1. gcloud run deploy aeochecker-backend --source . --region us-east4 --allow-unauthenticated
 
 ## API Endpoints
 
