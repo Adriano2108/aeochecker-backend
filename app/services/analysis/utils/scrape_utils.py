@@ -363,9 +363,12 @@ async def check_robots_txt(url: str) -> Tuple[bool, List[str]]:
     sitemap_urls = []
     exists = False
     
+    # Use the same headers as the main scraping function instead of Googlebot headers
+    headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/58.0.3029.110 Safari/537.3"}
+    
     try:
         async with httpx.AsyncClient() as client:
-            response = await client.get(robots_url, headers=CRAWLER_HEADERS, timeout=10)
+            response = await client.get(robots_url, headers=headers, timeout=10, follow_redirects=True)
             if response.status_code == 200:
                 exists = True
                 # Extract Sitemap directives
@@ -390,8 +393,10 @@ async def is_valid_sitemap(url: str) -> bool:
         Boolean indicating if the URL is a valid sitemap
     """
     try:
+        # Use the same headers as the main scraping function
+        headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/58.0.3029.110 Safari/537.3"}
         async with httpx.AsyncClient() as client:
-            response = await client.get(url, headers=CRAWLER_HEADERS, timeout=10, follow_redirects=True)
+            response = await client.get(url, headers=headers, timeout=10, follow_redirects=True)
             
             # Check if the response is successful
             if response.status_code < 400:
