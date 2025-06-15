@@ -123,7 +123,6 @@ class AiPresenceAnalyzer(BaseAnalyzer):
         """
         # 1. Query LLMs
         llm_responses = await self._query_llms(company_facts)
-        print(llm_responses)
         # 2. Score each response
         scores = {}
         details = {}

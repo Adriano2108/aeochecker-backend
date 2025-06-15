@@ -210,7 +210,7 @@ async def scrape_company_facts(url: str, soup: BeautifulSoup, all_text: str) -> 
     name = ""
     if soup.title and soup.title.string:
         title_text = soup.title.string.strip()
-        for separator in [' - ', ' | ', ' • ', ' : ', ' · ', ' – ', ': ', ' — ']:
+        for separator in [' - ', ' | ', ' • ', ' : ', ' · ', ' – ', ': ', ' — ', "."]:
             if separator in title_text:
                 name = title_text.split(separator)[0].strip()
                 break
@@ -220,7 +220,7 @@ async def scrape_company_facts(url: str, soup: BeautifulSoup, all_text: str) -> 
     og_title = soup.find("meta", property="og:title")
     if og_title and og_title.get("content"):
         title_text = og_title["content"].strip()
-        for separator in [' - ', ' | ', ' • ', ' : ', ' · ', ' – ', ': ', ' — ']:
+        for separator in [' - ', ' | ', ' • ', ' : ', ' · ', ' – ', ': ', ' — ', "."]:
             if separator in title_text:
                 name = title_text.split(separator)[0].strip()
                 break
