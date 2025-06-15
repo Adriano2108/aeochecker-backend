@@ -72,13 +72,11 @@ class StrategyReviewAnalyzer(BaseAnalyzer):
                 score += schema_count * 5.0
                 
         # 2. Specific important schemas (30 points max)
+        # Having ANY relevant schema type should give full marks
         specific_schemas = results["specific_schemas"]
-        if specific_schemas["FAQPage"]:
-            score += 10.0
-        if specific_schemas["Article"]:
-            score += 10.0
-        if specific_schemas["Review"]:
-            score += 10.0
+        has_any_important_schema = any(specific_schemas.values())
+        if has_any_important_schema:
+            score += 30.0  # Full marks for having any important schema
             
         # 3. Semantic HTML elements (40 points max)
         semantic_elements = results["semantic_elements"]
@@ -107,30 +105,6 @@ class StrategyReviewAnalyzer(BaseAnalyzer):
         """
         Analyzes a BeautifulSoup object for structured data implementation and
         HTML semantics.
-
-        Args:
-            soup: A BeautifulSoup object representing the parsed HTML page.
-
-        Returns:
-            A dictionary containing the analysis results:
-            {
-                "schema_markup_present": bool,
-                "schema_types_found": list[str],
-                "specific_schemas": {
-                    "FAQPage": bool,
-                    "Article": bool, # Includes subtypes like NewsArticle, BlogPosting
-                    "Review": bool   # Includes subtypes like AggregateRating
-                },
-                "semantic_elements": {
-                    "present": bool,
-                    "unique_types_found": list[str],
-                    "count_unique_types": int,
-                    "all_tags_count": int,
-                    "semantic_tags_count": int,
-                    "non_semantic_tags_count": int, # Primarily divs and spans
-                    "semantic_ratio": float # Ratio of semantic tags to total tags
-                }
-            }
         """
         results = {
             "schema_markup_present": False,
@@ -210,19 +184,35 @@ class StrategyReviewAnalyzer(BaseAnalyzer):
         # Finalize schema types list
         results["schema_types_found"] = sorted(list(schema_types_set))
 
-        # Check for specific schema types (case-insensitive check might be safer)
-        article_types = {"Article", "NewsArticle", "BlogPosting", "TechArticle", "Report"}  # Add more as needed
-        review_types = {"Review", "AggregateRating", "Rating", "Product"}  # Product often contains reviews/ratings
+        # Check for specific schema types with comprehensive mapping
+        # Define schema type mappings for better detection
+        schema_mappings = {
+            "FAQPage": {"FAQPage"},
+            "Article": {"Article", "NewsArticle", "BlogPosting", "TechArticle", "Report"},
+            "Review": {"Review", "AggregateRating", "Rating"},
+            "Product": {"Product", "IndividualProduct", "ProductModel"},
+            "Organization": {"Organization", "Corporation", "NGO", "GovernmentOrganization", "EducationalOrganization"},
+            "LocalBusiness": {"LocalBusiness", "Restaurant", "Store", "AutoDealer", "Dentist", "Hospital", "LegalService", "RealEstateAgent"},
+            "Person": {"Person"},
+            "Event": {"Event", "BusinessEvent", "ChildrensEvent", "ComedyEvent", "CourseInstance", "DanceEvent", "DeliveryEvent", "EducationEvent", "ExhibitionEvent", "Festival", "FoodEvent", "LiteraryEvent", "MusicEvent", "PublicationEvent", "SaleEvent", "ScreeningEvent", "SocialEvent", "SportsEvent", "TheaterEvent", "VisualArtsEvent"},
+            "Recipe": {"Recipe"},
+            "Service": {"Service", "FinancialService", "FoodService", "GovernmentService", "TaxiService"},
+            "WebPage": {"WebPage", "AboutPage", "CheckoutPage", "CollectionPage", "ContactPage", "FAQPage", "ItemPage", "MedicalWebPage", "ProfilePage", "QAPage", "RealEstateListing", "SearchResultsPage"},
+            "BreadcrumbList": {"BreadcrumbList"},
+            "VideoObject": {"VideoObject", "Movie", "TVSeries", "TVEpisode"},
+            "ImageObject": {"ImageObject", "Photograph"},
+            "Course": {"Course", "CourseInstance"},
+            "JobPosting": {"JobPosting"},
+            "HowTo": {"HowTo", "Recipe"},
+            "Dataset": {"Dataset"},
+            "SoftwareApplication": {"SoftwareApplication", "MobileApplication", "WebApplication", "VideoGame"}
+        }
 
+        # Check each found schema type against our mappings
         for schema_type in schema_types_set:
-            st_lower = schema_type.lower()
-            if st_lower == "faqpage":
-                results["specific_schemas"]["FAQPage"] = True
-            # Check against sets for broader matching
-            if schema_type in article_types or st_lower in {a.lower() for a in article_types}:
-                results["specific_schemas"]["Article"] = True
-            if schema_type in review_types or st_lower in {r.lower() for r in review_types}:
-                results["specific_schemas"]["Review"] = True
+            for key, type_set in schema_mappings.items():
+                if schema_type in type_set or schema_type.lower() in {t.lower() for t in type_set}:
+                    results["specific_schemas"][key] = True
 
         # --- 3c: HTML Semantics and Elements ---
         semantic_tags_list = [
@@ -426,35 +416,13 @@ class StrategyReviewAnalyzer(BaseAnalyzer):
     async def _analyze_crawler_accessibility(self, url: str, soup: BeautifulSoup) -> Tuple[float, Dict[str, Any]]:
         """
         Checks website accessibility for AI crawlers based on URL and soup.
-
-        Args:
-            url: The original URL of the website.
-            soup: The BeautifulSoup object of the fetched HTML content.
-
-        Returns:
-            A dictionary containing accessibility checks:
-            {
-                "sitemap_found": bool,
-                "robots_txt_found": bool,
-                "pre_rendered_content": bool,
-                },
-                "pre_rendered_content": {
-                    "likely_pre_rendered": bool, # Heuristic assessment
-                    "text_length": int,
-                    "js_framework_hint": bool # Indication if common JS frameworks detected
-                },
-                "language": {
-                    "detected_languages": list[str] | None,
-                    "is_english": bool | None,
-                    "english_version_url": str | None # Found via hreflang
-                },
-                "score": float # 0-100 score based on the checks
-            }
         """
 
         results = {
             "sitemap_found": False,
             "robots_txt_found": False,
+            "llms_txt_found": False,
+            "llm_txt_found": False,
             "pre_rendered_content": {
                 "likely_pre_rendered": False,
                 "text_length": 0,
@@ -478,6 +446,29 @@ class StrategyReviewAnalyzer(BaseAnalyzer):
         # --- Check for robots.txt ---
         robots_found, _ = await check_robots_txt(url)
         results["robots_txt_found"] = robots_found
+
+        # --- Check for llms.txt and llm.txt files ---
+        try:
+            async with httpx.AsyncClient() as client:
+                # Check for llms.txt
+                llms_url = f"{base_url}/llms.txt"
+                try:
+                    llms_response = await client.head(llms_url, timeout=5.0)
+                    if llms_response.status_code == 200:
+                        results["llms_txt_found"] = True
+                except Exception:
+                    pass  # File not found or error accessing it
+                
+                # Check for llm.txt
+                llm_url = f"{base_url}/llm.txt"
+                try:
+                    llm_response = await client.head(llm_url, timeout=5.0)
+                    if llm_response.status_code == 200:
+                        results["llm_txt_found"] = True
+                except Exception:
+                    pass  # File not found or error accessing it
+        except Exception as e:
+            print(f"Warning: Error checking for LLM text files: {e}")
 
         # --- Check for sitemaps ---
         potential_sitemap_urls = await get_potential_sitemap_urls(url)
@@ -544,26 +535,35 @@ class StrategyReviewAnalyzer(BaseAnalyzer):
         """Calculate a score from 0-100 for crawler accessibility."""
         score = 0.0
         
-        # 1. Sitemap availability (25 points)
+        # 1. Sitemap availability
         if results["sitemap_found"]:
-            score += 25.0
+            score += 20.0
         
-        # 2. Robots.txt availability (15 points)
+        # 2. Robots.txt availability
         if results["robots_txt_found"]:
             score += 15.0
         
-        # 3. Pre-rendered content (30 points)
+        # 3. LLM-specific files
+        # llms.txt file
+        if results["llms_txt_found"]:
+            score += 10.0
+        
+        # llm.txt file
+        if results["llm_txt_found"]:
+            score += 5.0
+        
+        # 4. Pre-rendered content
         if results["pre_rendered_content"]["likely_pre_rendered"]:
-            score += 30.0
+            score += 25.0
         elif not results["pre_rendered_content"]["js_framework_hint"]:
             # If no JS framework hint detected and reasonable text, give partial points
             if results["pre_rendered_content"]["text_length"] > 200:
-                score += 15.0
+                score += 10.0
         
-        # 4. Language accessibility (30 points)
+        # 5. Language accessibility
         if results["language"]["is_english"] is True:
-            score += 30.0
+            score += 25.0
         elif results["language"]["english_version_url"]:
-            score += 20.0  # Partial credit for having an English version
+            score += 10.0  # Partial credit for having an English version
         
         return min(100.0, score)
