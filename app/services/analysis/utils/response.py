@@ -72,7 +72,6 @@ def generate_dummy_report(original_report: dict) -> dict:
                 "openai": {
                     "name": True,
                     "product": True,
-                    "hq": False,
                     "industry": False,
                     "founded": False,
                     "uncertainty": True,
@@ -81,7 +80,6 @@ def generate_dummy_report(original_report: dict) -> dict:
                 "anthropic": {
                     "name": False,
                     "product": False,
-                    "hq": False,
                     "industry": True,
                     "founded": True,
                     "uncertainty": True,
@@ -90,7 +88,6 @@ def generate_dummy_report(original_report: dict) -> dict:
                 "gemini": {
                     "name": True,
                     "product": True,
-                    "hq": False,
                     "industry": False,
                     "founded": True,
                     "uncertainty": False,
