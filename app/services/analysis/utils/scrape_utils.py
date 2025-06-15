@@ -29,8 +29,10 @@ async def scrape_website(url: str) -> Tuple[BeautifulSoup, str]:
         - all_text: Extracted text content from the website
     """
     headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/58.0.3029.110 Safari/537.3"}
+    
     async with httpx.AsyncClient() as client:
-        response = await client.get(url, headers=headers)
+        response = await client.get(url, headers=headers, follow_redirects=True)
+        
         soup = BeautifulSoup(response.text, "html.parser")
 
         # Handle meta-refresh redirects
@@ -41,7 +43,7 @@ async def scrape_website(url: str) -> Tuple[BeautifulSoup, str]:
             if match:
                 redirect_url = match.group(1).strip()
                 redirect_url = urljoin(str(response.url), redirect_url)
-                response = await client.get(redirect_url, headers=headers)
+                response = await client.get(redirect_url, headers=headers, follow_redirects=True)
                 soup = BeautifulSoup(response.text, "html.parser")
 
         # Check for 'Redirecting...' or empty content, and try alternative www/non-www
@@ -60,7 +62,7 @@ async def scrape_website(url: str) -> Tuple[BeautifulSoup, str]:
             else:
                 alt_netloc = "www." + netloc
             alt_url = parsed._replace(netloc=alt_netloc).geturl()
-            response = await client.get(alt_url, headers=headers)
+            response = await client.get(alt_url, headers=headers, follow_redirects=True)
             soup = BeautifulSoup(response.text, "html.parser")
             tried_alternative = True
             
@@ -238,7 +240,6 @@ async def scrape_company_facts(url: str, soup: BeautifulSoup, all_text: str) -> 
 
     # Initialize fields that will be extracted from JSON-LD or other means
     founded = ""
-    hq = ""
     
     for script in soup.find_all("script", type="application/ld+json"):
         try:
@@ -270,15 +271,6 @@ async def scrape_company_facts(url: str, soup: BeautifulSoup, all_text: str) -> 
                         if isinstance(founder_info, str):
                             founded = founder_info.strip() # Or perhaps log a warning: "Using founder name as founded date"
 
-                    if entry.get("address"):
-                        address_data = entry.get("address")
-                        if isinstance(address_data, dict):
-                            hq = address_data.get("addressLocality", "").strip()
-                        elif isinstance(address_data, str) and not hq: # If address is a string and hq not set
-                            # Attempt to extract locality or use the whole string if simple. This is heuristic.
-                            # For now, we prefer addressLocality from a structured address.
-                            # Consider assigning address_data if no locality found and address_data is short.
-                            pass 
         except (json.JSONDecodeError, TypeError, AttributeError) as e:
             continue
 
@@ -348,7 +340,6 @@ If you cannot confidently determine the industry or products, write "Unknown" fo
         "industry": industry,
         "key_products_services": key_products_services,
         "founded": founded,
-        "hq": hq,
         "description": description,
     }
 
