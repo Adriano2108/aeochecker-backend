@@ -207,27 +207,204 @@ def _extract_industry_and_products(soup: BeautifulSoup, all_text: str) -> Dict[s
         "key_products_services": final_kps,
     }
 
-async def scrape_company_facts(url: str, soup: BeautifulSoup, all_text: str) -> dict:
-    # Extract name from <title> or og:title
-    name = ""
+def extract_company_name(soup: BeautifulSoup, url: str) -> str:
+    """
+    Extract the company name from various sources using frequency analysis and priority rules.
+    
+    Args:
+        soup: BeautifulSoup object of the parsed HTML
+        url: The URL of the website
+        
+    Returns:
+        The most likely company name
+    """
+    print(f"\n[DEBUG] Starting company name extraction for URL: {url}")
+    
+    potential_names = []
+    separators = [' - ', ' | ', ' • ', ' : ', ' · ', ' – ', ': ', ' — ', ' . ']  # Added '. ' for period + space
+    
+    # 1. Check for og:site_name and similar clear site identifiers (HIGHEST PRIORITY)
+    site_name_selectors = [
+        ("meta", {"property": "og:site_name"}),
+        ("meta", {"name": "application-name"}),
+        ("meta", {"name": "apple-mobile-web-app-title"}),
+        ("meta", {"property": "twitter:site"}),
+    ]
+    
+    high_priority_names = []  # Track high-priority names separately
+    print(f"[DEBUG] Checking high-priority sources (og:site_name, etc.)...")
+    for tag_name, attrs in site_name_selectors:
+        element = soup.find(tag_name, attrs)
+        if element and element.get("content"):
+            content = element["content"].strip()
+            # Clean up Twitter handle format
+            if content.startswith("@"):
+                content = content[1:]
+            if content and len(content.split()) <= 3:  # Site names should be short
+                print(f"[DEBUG] Found high-priority name: '{content}' from {attrs}")
+                potential_names.append(content)
+                high_priority_names.append(content)
+    
+    print(f"[DEBUG] High-priority names found: {high_priority_names}")
+    
+    # 2. Check title tag (MEDIUM-HIGH PRIORITY)
+    title_based_names = []  # Track title-based names separately
+    print(f"[DEBUG] Checking <title> tag...")
     if soup.title and soup.title.string:
         title_text = soup.title.string.strip()
-        for separator in [' - ', ' | ', ' • ', ' : ', ' · ', ' – ', ': ', ' — ', "."]:
+        print(f"[DEBUG] Title text: '{title_text}'")
+        found_separator = False
+        
+        for separator in separators:
             if separator in title_text:
-                name = title_text.split(separator)[0].strip()
+                print(f"[DEBUG] Found separator '{separator}' in title")
+                parts = title_text.split(separator, 1)  # Split only on first occurrence
+                left_part = parts[0].strip()
+                right_part = parts[1].strip() if len(parts) > 1 else ""
+                
+                print(f"[DEBUG] Title parts - Left: '{left_part}', Right: '{right_part}'")
+                
+                # Add both parts if they're 3 words or less
+                if left_part and len(left_part.split()) <= 3:
+                    print(f"[DEBUG] Adding left part from title: '{left_part}'")
+                    potential_names.append(left_part)
+                    title_based_names.append(left_part)
+                if right_part and len(right_part.split()) <= 3:
+                    print(f"[DEBUG] Adding right part from title: '{right_part}'")
+                    potential_names.append(right_part)
+                    title_based_names.append(right_part)
+                
+                found_separator = True
                 break
-        else:
-            name = title_text
+        
+        if not found_separator:
+            word_count = len(title_text.split())
+            print(f"[DEBUG] No separator found in title, word count: {word_count}")
+            if word_count <= 3:
+                print(f"[DEBUG] Adding whole title: '{title_text}'")
+                potential_names.append(title_text)
+                title_based_names.append(title_text)
     
+    # 3. Check og:title (MEDIUM-HIGH PRIORITY)
+    print(f"[DEBUG] Checking og:title...")
     og_title = soup.find("meta", property="og:title")
     if og_title and og_title.get("content"):
         title_text = og_title["content"].strip()
-        for separator in [' - ', ' | ', ' • ', ' : ', ' · ', ' – ', ': ', ' — ', "."]:
+        print(f"[DEBUG] OG title text: '{title_text}'")
+        found_separator = False
+        
+        for separator in separators:
             if separator in title_text:
-                name = title_text.split(separator)[0].strip()
+                print(f"[DEBUG] Found separator '{separator}' in og:title")
+                parts = title_text.split(separator, 1)  # Split only on first occurrence
+                left_part = parts[0].strip()
+                right_part = parts[1].strip() if len(parts) > 1 else ""
+                
+                print(f"[DEBUG] OG title parts - Left: '{left_part}', Right: '{right_part}'")
+                
+                # Add both parts if they're 3 words or less
+                if left_part and len(left_part.split()) <= 3:
+                    print(f"[DEBUG] Adding left part from og:title: '{left_part}'")
+                    potential_names.append(left_part)
+                    title_based_names.append(left_part)
+                if right_part and len(right_part.split()) <= 3:
+                    print(f"[DEBUG] Adding right part from og:title: '{right_part}'")
+                    potential_names.append(right_part)
+                    title_based_names.append(right_part)
+                
+                found_separator = True
                 break
-        else:
-            name = title_text
+        
+        if not found_separator:
+            word_count = len(title_text.split())
+            print(f"[DEBUG] No separator found in og:title, word count: {word_count}")
+            if word_count <= 3:
+                print(f"[DEBUG] Adding whole og:title: '{title_text}'")
+                potential_names.append(title_text)
+                title_based_names.append(title_text)
+    
+    print(f"[DEBUG] Title-based names found: {title_based_names}")
+    
+    # 4. Get domain name as fallback (LOWEST PRIORITY)
+    print(f"[DEBUG] Extracting domain name...")
+    domain_name = get_domain_name(url)
+    domain_based_names = []
+    if domain_name:
+        print(f"[DEBUG] Domain name extracted: '{domain_name}'")
+        potential_names.append(domain_name)
+        domain_based_names.append(domain_name)
+    
+    print(f"[DEBUG] Domain-based names found: {domain_based_names}")
+    
+    # Remove empty strings and duplicates while preserving order for priority
+    cleaned_names = []
+    seen = set()
+    for name in potential_names:
+        if name and name not in seen:
+            cleaned_names.append(name)
+            seen.add(name)
+    
+    print(f"[DEBUG] All potential names (deduplicated): {cleaned_names}")
+    
+    if not cleaned_names:
+        print(f"[DEBUG] No names found, returning empty string")
+        return ""
+    
+    # If we only have one name, return it
+    if len(cleaned_names) == 1:
+        print(f"[DEBUG] Only one name found, returning: '{cleaned_names[0]}'")
+        return cleaned_names[0]
+    
+    # Count frequency of each name (case-insensitive)
+    name_counts = {}
+    for name in cleaned_names:
+        name_lower = name.lower()
+        name_counts[name_lower] = name_counts.get(name_lower, 0) + 1
+    
+    print(f"[DEBUG] Name frequency counts: {name_counts}")
+    
+    # Find the most frequent name(s)
+    max_count = max(name_counts.values())
+    most_frequent_names = [name for name in cleaned_names if name_counts[name.lower()] == max_count]
+    
+    print(f"[DEBUG] Most frequent names (count={max_count}): {most_frequent_names}")
+    
+    # If there's a clear winner by frequency (and it appears more than once), return it
+    if len(most_frequent_names) == 1 and max_count > 1:
+        print(f"[DEBUG] Clear frequency winner found: '{most_frequent_names[0]}'")
+        return most_frequent_names[0]
+    
+    # Apply priority rules when there's no clear frequency winner
+    print(f"[DEBUG] Applying priority rules...")
+    
+    # Check for high-priority names first
+    print(f"[DEBUG] Checking high-priority names: {high_priority_names}")
+    for name in high_priority_names:
+        if name in most_frequent_names:
+            print(f"[DEBUG] Selected high-priority name: '{name}'")
+            return name
+    
+    # Then check for title-based names
+    print(f"[DEBUG] Checking title-based names: {title_based_names}")
+    for name in title_based_names:
+        if name in most_frequent_names:
+            print(f"[DEBUG] Selected title-based name: '{name}'")
+            return name
+    
+    # Finally check domain-based names
+    print(f"[DEBUG] Checking domain-based names: {domain_based_names}")
+    for name in domain_based_names:
+        if name in most_frequent_names:
+            print(f"[DEBUG] Selected domain-based name: '{name}'")
+            return name
+    
+    # Return the first name as fallback (should not reach here normally)
+    print(f"[DEBUG] Using fallback - returning first name: '{cleaned_names[0]}'")
+    return cleaned_names[0]
+
+async def scrape_company_facts(url: str, soup: BeautifulSoup, all_text: str) -> dict:
+    # Extract name using the new dedicated function
+    name = extract_company_name(soup, url)
 
     # Extract description from meta or og:description
     description = ""
@@ -273,22 +450,6 @@ async def scrape_company_facts(url: str, soup: BeautifulSoup, all_text: str) -> 
 
         except (json.JSONDecodeError, TypeError, AttributeError) as e:
             continue
-
-    # Fallback for name extraction: use domain name if still empty
-    if not name:
-        try:
-            parsed_url = urlparse(url)
-            domain = parsed_url.netloc
-            # Remove 'www.' prefix if exists
-            if domain.startswith('www.'):
-                domain = domain[4:]
-            # Extract the main part before the first dot (e.g., 'github' from 'github.com')
-            name_from_domain = domain.split('.')[0]
-            # Capitalize the first letter
-            if name_from_domain:
-                name = name_from_domain[0].upper() + name_from_domain[1:]
-        except Exception: 
-            pass
 
     extracted_data = _extract_industry_and_products(soup, all_text)
     industry = extracted_data["industry"]
@@ -505,3 +666,19 @@ async def _validate_and_get_best_url(url: str) -> str:
                 # Skip this URL if it errors out
     
     return best_url
+
+def get_domain_name(url: str) -> str:
+    try:
+        parsed_url = urlparse(url)
+        domain = parsed_url.netloc
+        # Remove 'www.' prefix if exists
+        if domain.startswith('www.'):
+            domain = domain[4:]
+        # Extract the main part before the first dot (e.g., 'github' from 'github.com')
+        name_from_domain = domain.split('.')[0]
+        # Capitalize the first letter
+        if name_from_domain:
+            return name_from_domain[0].upper() + name_from_domain[1:]
+    except Exception: 
+        pass
+    return ""
