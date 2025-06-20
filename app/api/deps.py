@@ -45,6 +45,7 @@ async def get_current_user_optional(authorization: Optional[str] = Header(defaul
     """
     Optional authentication - returns user if valid auth provided, None otherwise
     """
+
     if not authorization or not authorization.startswith("Bearer "):
         return None
     

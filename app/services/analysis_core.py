@@ -260,6 +260,21 @@ class AnalysisService:
         print(f"Report saved for job {job_id}")
 
     @staticmethod
+    def _build_sharing_metadata(job_data: dict) -> dict:
+        """
+        Build sharing metadata from job data
+        """
+        return {
+            "sharing": {
+                "is_public": job_data.get("public", False),
+                "share_token": job_data.get("share_token"),
+                "shared_at": job_data.get("shared_at"),
+                "view_count": job_data.get("view_count", 0),
+                "share_url": f"results?share={job_data.get('share_token')}" if job_data.get("share_token") else None
+            }
+        }
+
+    @staticmethod
     async def get_job_status(job_id: str, user_id: str) -> Dict[str, Any]:
         """
         Get the status of an analysis job
@@ -328,20 +343,10 @@ class AnalysisService:
         user = user_ref.get()
         user_data = user.to_dict()
         
-        print(user_data)
         if not user_data.get("persistent", False):
             result = generate_dummy_report(result)
         
-        # Enrich with sharing metadata for the owner
-        sharing_metadata = {
-            "sharing": {
-                "is_public": job_data.get("public", False),
-                "share_token": job_data.get("share_token"),
-                "shared_at": job_data.get("shared_at"),
-                "view_count": job_data.get("view_count", 0),
-                "share_url": f"{settings.FRONTEND_URL}/results?share={job_data.get('share_token')}" if job_data.get("share_token") else None
-            }
-        }
+        sharing_metadata = AnalysisService._build_sharing_metadata(job_data)
         
         enriched_result = {**result, **sharing_metadata}
             
@@ -375,7 +380,7 @@ class AnalysisService:
             token = job_data["share_token"]
         
         # Return the share URL
-        share_url = f"{settings.FRONTEND_URL}/results?share={token}"
+        share_url = f"results?share={token}"
         return {"share_url": share_url}
 
     @staticmethod
@@ -431,7 +436,6 @@ class AnalysisService:
         if result.get("deleted", False):
             return {"status": AnalysisStatusConstants.NOT_FOUND}
         
-        # Determine if we should show dummy or full report
         should_show_dummy = True
 
         if user:
@@ -445,7 +449,11 @@ class AnalysisService:
         if should_show_dummy:
             result = generate_dummy_report(result)
         
-        return {"status": AnalysisStatusConstants.COMPLETED, "result": result}
+        sharing_metadata = AnalysisService._build_sharing_metadata(job_data)
+        
+        enriched_result = {**result, **sharing_metadata}
+        
+        return {"status": AnalysisStatusConstants.COMPLETED, "result": enriched_result}
 
     @staticmethod
     async def delete_report(job_id: str, user_id: str) -> Dict[str, Any]:

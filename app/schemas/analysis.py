@@ -34,7 +34,7 @@ class SharingMetadata(CamelCaseModel):
     share_token: Optional[str] = None
     shared_at: Optional[datetime] = None
     view_count: int = 0
-    share_url: Optional[HttpUrl] = None
+    share_url: Optional[str] = None
 
 class AnalysisResult(CamelCaseModel):
     url: HttpUrl
@@ -68,7 +68,7 @@ class AnalysisResult(CamelCaseModel):
                     "shareToken": "abc123def456ghi789",
                     "sharedAt": "2023-07-10T15:30:00.000Z",
                     "viewCount": 42,
-                    "shareUrl": "https://aeochecker.ai/results?share=abc123def456ghi789"
+                    "shareUrl": "results?share=abc123def456ghi789"
                 }
             }
         }
@@ -110,11 +110,11 @@ class ReportSummary(CamelCaseModel):
         }
 
 class ShareLink(CamelCaseModel):
-    share_url: HttpUrl
+    share_url: str
 
     class Config:
         json_schema_extra = {
             "example": {
-                "shareUrl": "https://aeochecker.ai/results?share=abc123def456ghi789"
+                "shareUrl": "results?share=abc123def456ghi789"
             }
         } 
