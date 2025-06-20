@@ -218,6 +218,31 @@ def extract_company_name(soup: BeautifulSoup, url: str) -> str:
     Returns:
         The most likely company name
     """
+    
+    def _remove_domain_extension(name: str) -> str:
+        """
+        Remove common domain extensions from a company name.
+        E.g., 'Amazon.com' becomes 'Amazon'
+        """
+        if not name:
+            return name
+            
+        # Common domain extensions to remove
+        domain_extensions = [
+            '.com', '.net', '.org', '.io', '.co', '.ai', '.app', '.dev', 
+            '.tech', '.biz', '.info', '.me', '.tv', '.cc', '.ly', '.to',
+            '.us', '.uk', '.ca', '.de', '.fr', '.jp', '.au', '.in'
+        ]
+        
+        name_lower = name.lower()
+        for extension in domain_extensions:
+            if name_lower.endswith(extension):
+                # Remove the extension and return the cleaned name
+                # Preserve original case from the beginning
+                return name[:len(name) - len(extension)]
+        
+        return name
+    
     print(f"\n[DEBUG] Starting company name extraction for URL: {url}")
     
     potential_names = []
@@ -337,20 +362,24 @@ def extract_company_name(soup: BeautifulSoup, url: str) -> str:
     print(f"[DEBUG] Domain-based names found: {domain_based_names}")
     
     # Remove empty strings and duplicates while preserving order for priority
+    # Also apply domain extension removal during cleaning
     cleaned_names = []
     seen = set()
     for name in potential_names:
-        if name and name not in seen:
-            cleaned_names.append(name)
-            seen.add(name)
+        if name:
+            # Remove domain extension first
+            cleaned_name = _remove_domain_extension(name)
+            if cleaned_name and cleaned_name not in seen:
+                cleaned_names.append(cleaned_name)
+                seen.add(cleaned_name)
     
-    print(f"[DEBUG] All potential names (deduplicated): {cleaned_names}")
+    print(f"[DEBUG] All potential names (deduplicated and domain-cleaned): {cleaned_names}")
     
     if not cleaned_names:
         print(f"[DEBUG] No names found, returning empty string")
         return ""
     
-    # If we only have one name, return it
+    # If we only have one name, return it (already domain-cleaned)
     if len(cleaned_names) == 1:
         print(f"[DEBUG] Only one name found, returning: '{cleaned_names[0]}'")
         return cleaned_names[0]
@@ -377,28 +406,33 @@ def extract_company_name(soup: BeautifulSoup, url: str) -> str:
     # Apply priority rules when there's no clear frequency winner
     print(f"[DEBUG] Applying priority rules...")
     
+    # For priority checking, we need to match against the cleaned names
+    cleaned_high_priority = [_remove_domain_extension(name) for name in high_priority_names]
+    cleaned_title_based = [_remove_domain_extension(name) for name in title_based_names]
+    cleaned_domain_based = [_remove_domain_extension(name) for name in domain_based_names]
+    
     # Check for high-priority names first
-    print(f"[DEBUG] Checking high-priority names: {high_priority_names}")
-    for name in high_priority_names:
+    print(f"[DEBUG] Checking cleaned high-priority names: {cleaned_high_priority}")
+    for name in cleaned_high_priority:
         if name in most_frequent_names:
             print(f"[DEBUG] Selected high-priority name: '{name}'")
             return name
     
     # Then check for title-based names
-    print(f"[DEBUG] Checking title-based names: {title_based_names}")
-    for name in title_based_names:
+    print(f"[DEBUG] Checking cleaned title-based names: {cleaned_title_based}")
+    for name in cleaned_title_based:
         if name in most_frequent_names:
             print(f"[DEBUG] Selected title-based name: '{name}'")
             return name
     
     # Finally check domain-based names
-    print(f"[DEBUG] Checking domain-based names: {domain_based_names}")
-    for name in domain_based_names:
+    print(f"[DEBUG] Checking cleaned domain-based names: {cleaned_domain_based}")
+    for name in cleaned_domain_based:
         if name in most_frequent_names:
             print(f"[DEBUG] Selected domain-based name: '{name}'")
             return name
     
-    # Return the first name as fallback (should not reach here normally)
+    # Return the first name as fallback (already domain-cleaned)
     print(f"[DEBUG] Using fallback - returning first name: '{cleaned_names[0]}'")
     return cleaned_names[0]
 
