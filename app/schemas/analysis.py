@@ -29,14 +29,23 @@ class CompetitorLandscapeAnalysisResult(CamelCaseModel):
     included: bool
 
 
+class SharingMetadata(CamelCaseModel):
+    is_public: bool
+    share_token: Optional[str] = None
+    shared_at: Optional[datetime] = None
+    view_count: int = 0
+    share_url: Optional[HttpUrl] = None
+
 class AnalysisResult(CamelCaseModel):
     url: HttpUrl
     score: float
     title: str
     dummy: bool
     analysis_synthesis: str
+    deleted: bool
     analysis_items: List[AnalysisTask]
     created_at: datetime
+    sharing: Optional[SharingMetadata] = None  # Only present for owners
     
     class Config:
         json_schema_extra = {
@@ -46,13 +55,21 @@ class AnalysisResult(CamelCaseModel):
                 "title": "Analysis Title",
                 "dummy": False,
                 "analysis_synthesis": "This is an example of the analysis synthesis",
+                "deleted": False,
                 "analysis_items": [
                     {"id": "task1", "title": "SEO Analysis", "result": "Good SEO practices found", "completed": True},
                     {"id": "task2", "title": "Performance Check", "result": "Site loads quickly", "completed": True},
                     {"id": "task3", "title": "Accessibility", "result": "Some accessibility issues found", "completed": True},
                     {"id": "task4", "title": "Mobile Friendly", "result": "Site is mobile friendly", "completed": True}
                 ],
-                "created_at": "2023-07-10T14:23:56.123Z"
+                "created_at": "2023-07-10T14:23:56.123Z",
+                "sharing": {
+                    "isPublic": True,
+                    "shareToken": "abc123def456ghi789",
+                    "sharedAt": "2023-07-10T15:30:00.000Z",
+                    "viewCount": 42,
+                    "shareUrl": "https://aeochecker.ai/results?share=abc123def456ghi789"
+                }
             }
         }
 
@@ -87,7 +104,8 @@ class ReportSummary(CamelCaseModel):
                 "title": "Analysis Title",
                 "score": 85.5,
                 "createdAt": "2023-07-10T14:23:56.123Z",
-                "analysisSynthesis": "Analysis Synthesis"
+                "analysisSynthesis": "Analysis Synthesis",
+                "jobId": "abc123"
             }
         }
 

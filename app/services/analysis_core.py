@@ -1,6 +1,7 @@
 import uuid
 import json
-from typing import Dict, Any
+import secrets
+from typing import Dict, Any, Optional
 from datetime import datetime
 from app.core.firebase import db
 from firebase_admin import firestore
@@ -9,6 +10,7 @@ from app.services.analysis import AiPresenceAnalyzer, CompetitorLandscapeAnalyze
 from app.services.analysis.utils.scrape_utils import scrape_website, scrape_company_facts, _validate_and_get_best_url
 from app.services.analysis.utils.response import generate_analysis_synthesis, generate_dummy_report
 from app.services.stats_service import StatsService
+from app.core.config import settings
 import asyncio
 
 class AnalysisService:
@@ -283,7 +285,7 @@ class AnalysisService:
     @staticmethod
     async def get_job_report(job_id: str, user_id: str) -> Dict[str, Any]:
         """
-        Get the complete analysis report for a job
+        Get the complete analysis report for a job with sharing metadata
         """
         job_ref = db.collection("analysis_jobs").document(job_id)
         job = job_ref.get()
@@ -312,13 +314,151 @@ class AnalysisService:
             return {"status": AnalysisStatusConstants.NOT_FOUND}
         
         result = report.to_dict()
+        
+        # Check if report is deleted
+        if result.get("deleted", False):
+            return {"status": AnalysisStatusConstants.NOT_FOUND}
 
         user_ref = db.collection("users").document(user_id)
         user = user_ref.get()
         user_data = user.to_dict()
         
+        print(user_data)
         if not user_data.get("persistent", False):
             result = generate_dummy_report(result)
+        
+        # Enrich with sharing metadata for the owner
+        sharing_metadata = {
+            "sharing": {
+                "is_public": job_data.get("public", False),
+                "share_token": job_data.get("share_token"),
+                "shared_at": job_data.get("shared_at"),
+                "view_count": job_data.get("view_count", 0),
+                "share_url": f"{settings.FRONTEND_URL}/results?share={job_data.get('share_token')}" if job_data.get("share_token") else None
+            }
+        }
+        
+        # Combine report content with sharing metadata
+        enriched_result = {**result, **sharing_metadata}
             
-        print(json.dumps(result, indent=4))
+        print(json.dumps(enriched_result, indent=4))
+        return {"status": AnalysisStatusConstants.COMPLETED, "result": enriched_result}
+
+    @staticmethod
+    async def create_share_link(job_id: str, user_id: str) -> Dict[str, Any]:
+        """
+        Create a shareable link for a job report
+        """
+        # Check if user owns the job
+        job_ref = db.collection("analysis_jobs").document(job_id)
+        job = job_ref.get()
+        
+        if not job.exists or job.to_dict().get("user_id") != user_id:
+            return {"status": "forbidden"}
+        
+        job_data = job.to_dict()
+        
+        # Generate token only once
+        if not job_data.get("public", False):
+            token = secrets.token_urlsafe(16)  # 128 bits ~ 22 chars
+            job_ref.update({
+                "public": True, 
+                "share_token": token,
+                "shared_at": datetime.now().isoformat(),  # Track when it was shared
+                "view_count": 0  # Initialize view counter
+            })
+        else:
+            token = job_data["share_token"]
+        
+        # Return the share URL
+        share_url = f"{settings.FRONTEND_URL}/results?share={token}"
+        return {"share_url": share_url}
+
+    @staticmethod
+    async def get_public_report(share_token: str, user: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+        """
+        Get a report by its public share token.
+        Returns dummy report if user is not authenticated or not persistent.
+        """
+        # Lookup job by token
+        jobs_ref = db.collection("analysis_jobs")
+        query = jobs_ref.where("share_token", "==", share_token).limit(1)
+        docs = query.get()
+        
+        if not docs:
+            return {"status": AnalysisStatusConstants.NOT_FOUND}
+        
+        job_snapshot = docs[0]
+        job_data = job_snapshot.to_dict()
+        
+        # Make sure the job is really public and finished
+        if not job_data.get("public"):
+            return {"status": AnalysisStatusConstants.FORBIDDEN}
+        
+        if job_data.get("status") != AnalysisStatusConstants.COMPLETED:
+            return {"status": "not_ready", "current_status": job_data.get("status")}
+        
+        # Increment view count for analytics
+        try:
+            job_snapshot.reference.update({"view_count": firestore.Increment(1)})
+        except Exception as e:
+            print(f"Warning: Could not update view count for {share_token}: {e}")
+        
+        # Pull the actual report out of the owner's sub-collection
+        owner_uid = job_data["user_id"]
+        report_ref = (
+            db.collection("users")
+            .document(owner_uid)
+            .collection("reports")
+            .document(job_snapshot.id)
+        )
+        report = report_ref.get()
+        
+        if not report.exists:
+            return {"status": AnalysisStatusConstants.NOT_FOUND}
+        
+        result = report.to_dict()
+        
+        # Check if report is deleted
+        if result.get("deleted", False):
+            return {"status": AnalysisStatusConstants.NOT_FOUND}
+        
+        # Determine if we should show dummy or full report
+        should_show_dummy = True
+        
+        if user:
+            user_ref = db.collection("users").document(user["uid"])
+            user_doc = user_ref.get()
+            
+            if user_doc.exists:
+                user_data = user_doc.to_dict()
+                should_show_dummy = not user_data.get("persistent", False)
+        
+        if should_show_dummy:
+            result = generate_dummy_report(result)
+        
         return {"status": AnalysisStatusConstants.COMPLETED, "result": result}
+
+    @staticmethod
+    async def delete_report(job_id: str, user_id: str) -> Dict[str, Any]:
+        """
+        Soft delete an analysis report by setting deleted=True.
+        Only the report owner can delete their report.
+        """
+        # Check if the report exists in user's reports collection
+        report_ref = db.collection("users").document(user_id).collection("reports").document(job_id)
+        report = report_ref.get()
+        
+        if not report.exists:
+            return {"status": "not_found"}
+        
+        report_data = report.to_dict()
+        
+        # Check if report is already deleted
+        if report_data.get("deleted", False):
+            return {"status": "not_found"}
+        
+        # Soft delete the report by setting deleted=True
+        report_ref.update({"deleted": True})
+        
+        return {"status": "success"}

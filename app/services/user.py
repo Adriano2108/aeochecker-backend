@@ -32,14 +32,18 @@ class UserService:
     @staticmethod
     async def get_user_reports(user_id: str, limit: int = 10) -> List[ReportSummary]:
         """
-        Retrieve user's analysis reports
+        Retrieve user's analysis reports (excluding deleted reports)
         """
         reports_ref = db.collection("users").document(user_id).collection("reports")
-        reports = reports_ref.order_by("created_at", direction="DESCENDING").limit(limit).stream()
+        reports = reports_ref.order_by("created_at", direction="DESCENDING").limit(limit * 2).stream()  # Get more to account for deleted ones
         
         result = []
         for report in reports:
             report_data = report.to_dict()
+            
+            if report_data.get("deleted", False):
+                continue
+                
             if report_data.get("created_at") and not isinstance(report_data["created_at"], datetime):
                 report_data["created_at"] = report_data["created_at"].datetime() if hasattr(report_data["created_at"], "datetime") else datetime.now()
             
@@ -52,6 +56,9 @@ class UserService:
                 job_id=report.id
             )
             result.append(summary)
+            
+            if len(result) >= limit:
+                break
         
         return result
 
@@ -77,7 +84,8 @@ class UserService:
                 "username": username_value,
                 "credits": user_credits,
                 "created_at": current_time,
-                "reports": []
+                "reports": [],
+                "persistent": bool(email)
             }
             
             storage_data = user_data.copy()
