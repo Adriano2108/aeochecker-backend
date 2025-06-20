@@ -35,6 +35,8 @@ env.bak/
 venv.bak/
 .venv/
 
+/scripts
+
 # Environment variables
 .env
 .env.local
