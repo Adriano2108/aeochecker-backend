@@ -66,30 +66,30 @@ def generate_dummy_report(original_report: dict) -> dict:
         {
             "id": "ai_presence",
             "title": "AI Presence",
-            "score": 60.0,
+            "score": 0.0,
             "completed": True,
             "result": {
                 "openai": {
-                    "name": True,
-                    "product": True,
+                    "name": False,
+                    "product": False,
                     "industry": False,
                     "founded": False,
-                    "uncertainty": True,
+                    "uncertainty": False,
                     "score": 0
                 },
                 "anthropic": {
                     "name": False,
                     "product": False,
-                    "industry": True,
-                    "founded": True,
-                    "uncertainty": True,
+                    "industry": False,
+                    "founded": False,
+                    "uncertainty": False,
                     "score": 0
                 },
                 "gemini": {
-                    "name": True,
-                    "product": True,
+                    "name": False,
+                    "product": False,
                     "industry": False,
-                    "founded": True,
+                    "founded": False,
                     "uncertainty": False,
                     "score": 0
                 },
@@ -99,21 +99,21 @@ def generate_dummy_report(original_report: dict) -> dict:
         {
             "id": "competitor_landscape",
             "title": "Competitor Landscape",
-            "score": 30.0,
+            "score": 0.0,
             "completed": True,
             "result": {
                 "included": False,
                 "sorted_competitors": [
                     {
-                        "name": "Apple",
+                        "name": "Company 1",
                         "count": 2
                     },
                     {
-                        "name": "Microsoft",
+                        "name": "Company 2",
                         "count": 1
                     },
                     {
-                        "name": "Amazon",
+                        "name": "Company 3",
                         "count": 1
                     }
                 ],
@@ -122,7 +122,7 @@ def generate_dummy_report(original_report: dict) -> dict:
         {
             "id": "strategy_review",
             "title": "Strategy Review",
-            "score": 80.0,
+            "score": 0.0,
             "completed": True,
             "result": {
                 "answerability": {
@@ -131,25 +131,25 @@ def generate_dummy_report(original_report: dict) -> dict:
                     "is_conversational_phrase": 0,
                     "has_statistics_phrase": 0,
                     "has_citation_phrase": 0,
-                    "has_citations_section": True,
+                    "has_citations_section": False,
                     "score": 0
                 },
                 "knowledge_base": {
-                    "has_wikipedia_page": True,
+                    "has_wikipedia_page": False,
                     "wikipedia_url": None,
                     "score": 0
                 },
                 "structured_data": {
-                    "schema_markup_present": True,
+                    "schema_markup_present": False,
                     "schema_types_found": [],
                     "specific_schemas": {
-                        "FAQPage": True,
+                        "FAQPage": False,
                         "Article": False,
                         "Review": False
                     },
                     "semantic_elements": {
-                        "present": True,
-                        "unique_types_found": ['h1', 'h2', 'h3', 'div'],
+                        "present": False,
+                        "unique_types_found": [],
                         "count_unique_types": 0,
                         "all_tags_count": 0,
                         "semantic_tags_count": 0,
@@ -159,10 +159,12 @@ def generate_dummy_report(original_report: dict) -> dict:
                     "score": 0
                 },
                 "ai_crawler_accessibility": {
-                    "sitemap_found": True,
+                    "sitemap_found": False,
                     "robots_txt_found": False,
+                    "llms_txt_found": False,
+                    "llm_txt_found": False,
                     "pre_rendered_content": {
-                        "likely_pre_rendered": True,
+                        "likely_pre_rendered": False,
                         "text_length": 0,
                         "js_framework_hint": False
                     },

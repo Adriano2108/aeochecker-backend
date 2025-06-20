@@ -89,4 +89,14 @@ class ReportSummary(CamelCaseModel):
                 "createdAt": "2023-07-10T14:23:56.123Z",
                 "analysisSynthesis": "Analysis Synthesis"
             }
+        }
+
+class ShareLink(CamelCaseModel):
+    share_url: HttpUrl
+
+    class Config:
+        json_schema_extra = {
+            "example": {
+                "shareUrl": "https://aeochecker.ai/results?share=abc123def456ghi789"
+            }
         } 
