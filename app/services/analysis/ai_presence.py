@@ -23,7 +23,7 @@ class AiPresenceAnalyzer(BaseAnalyzer):
         prompt = (
             f"Do not invent information. IF YOU HAVE NO KNOWLEDGE of this company, ONLY RESPOND WITH 'I Don't Know'."
             f"Please provide a brief 3-4 sentence summary of the company '{company_facts['name']}'. "
-            f"Include its industry, primary product/service, and founding year. "
+            f"Include its industry and primary product/service"
             f"Accuracy is crucial. If you lack specific information or are uncertain about any detail, **explicitly state \\'I don\\'t know\\' for that specific piece of information** rather than guessing or providing potentially inaccurate details. "
             f"Do not invent information. IF YOU HAVE NO KNOWLEDGE of this company, ONLY RESPOND WITH 'I Don't Know'."
         )
@@ -80,16 +80,6 @@ class AiPresenceAnalyzer(BaseAnalyzer):
             details['product'] = True
         else:
             details['product'] = False
-
-        founded_keywords = ["founded", "founding", "established", "created", "launched"]
-        founded_fact = str(company_facts['founded']).lower()
-        founded_found = (founded_fact and founded_fact != "none" and founded_fact in response_lower) or \
-                        any(keyword in response_lower for keyword in founded_keywords)
-        if founded_found:
-            score += 25
-            details['founded'] = True
-        else:
-            details['founded'] = False
 
         industry_keywords = ["industry"]
         industry_found = (company_facts['industry'] and company_facts['industry'].lower() in response_lower) or \

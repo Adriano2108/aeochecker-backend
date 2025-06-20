@@ -77,7 +77,6 @@ def generate_dummy_report(original_report: dict) -> dict:
                     "name": False,
                     "product": False,
                     "industry": False,
-                    "founded": False,
                     "uncertainty": False,
                     "score": 0
                 },
@@ -85,7 +84,6 @@ def generate_dummy_report(original_report: dict) -> dict:
                     "name": False,
                     "product": False,
                     "industry": False,
-                    "founded": False,
                     "uncertainty": False,
                     "score": 0
                 },
@@ -93,7 +91,6 @@ def generate_dummy_report(original_report: dict) -> dict:
                     "name": False,
                     "product": False,
                     "industry": False,
-                    "founded": False,
                     "uncertainty": False,
                     "score": 0
                 },

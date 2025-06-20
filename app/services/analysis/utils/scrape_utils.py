@@ -449,9 +449,6 @@ async def scrape_company_facts(url: str, soup: BeautifulSoup, all_text: str) -> 
     if og_desc and og_desc.get("content"):
         description = og_desc["content"].strip()
 
-    # Initialize fields that will be extracted from JSON-LD or other means
-    founded = ""
-    
     for script in soup.find_all("script", type="application/ld+json"):
         try:
             data = json.loads(script.string)
@@ -471,17 +468,6 @@ async def scrape_company_facts(url: str, soup: BeautifulSoup, all_text: str) -> 
                     if json_ld_desc and len(json_ld_desc) > len(description):
                         description = json_ld_desc
                     
-                    # foundingDate is preferred for the 'founded' field
-                    if entry.get("foundingDate"):
-                        founded = entry.get("foundingDate", "").strip()
-                    elif not founded and entry.get("founder"): # Fallback if foundingDate not present
-                        # 'founder' might be a person/org, not a date. Less ideal for "founded year".
-                        # This assignment is kept from original logic but might need review for semantic correctness.
-                        # For now, if it's a string, assign. If dict/list, ignore for 'founded'.
-                        founder_info = entry.get("founder")
-                        if isinstance(founder_info, str):
-                            founded = founder_info.strip() # Or perhaps log a warning: "Using founder name as founded date"
-
         except (json.JSONDecodeError, TypeError, AttributeError) as e:
             continue
 
@@ -534,7 +520,6 @@ If you cannot confidently determine the industry or products, write "Unknown" fo
         "name": name,
         "industry": industry,
         "key_products_services": key_products_services,
-        "founded": founded,
         "description": description,
     }
 
