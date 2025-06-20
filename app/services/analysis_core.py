@@ -237,7 +237,8 @@ class AnalysisService:
             "analysis_items": analysis_items,
             "created_at": datetime.now().isoformat(),
             "job_id": job_id,
-            "dummy": False
+            "dummy": False,
+            "deleted": False
         }
 
         # Update job status to completed
@@ -315,6 +316,10 @@ class AnalysisService:
         
         result = report.to_dict()
         
+        # Backward compatibility: ensure deleted field exists
+        if "deleted" not in result:
+            result["deleted"] = False
+        
         # Check if report is deleted
         if result.get("deleted", False):
             return {"status": AnalysisStatusConstants.NOT_FOUND}
@@ -338,7 +343,6 @@ class AnalysisService:
             }
         }
         
-        # Combine report content with sharing metadata
         enriched_result = {**result, **sharing_metadata}
             
         print(json.dumps(enriched_result, indent=4))
@@ -419,13 +423,17 @@ class AnalysisService:
         
         result = report.to_dict()
         
+        # Backward compatibility: ensure deleted field exists
+        if "deleted" not in result:
+            result["deleted"] = False
+        
         # Check if report is deleted
         if result.get("deleted", False):
             return {"status": AnalysisStatusConstants.NOT_FOUND}
         
         # Determine if we should show dummy or full report
         should_show_dummy = True
-        
+
         if user:
             user_ref = db.collection("users").document(user["uid"])
             user_doc = user_ref.get()

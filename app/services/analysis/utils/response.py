@@ -53,13 +53,17 @@ def generate_dummy_report(original_report: dict) -> dict:
         A sanitized report with dummy values for sensitive content
     """
     # Fields to preserve from the original report
-    preserved_fields = ["url", "score", "title", "analysis_synthesis", "created_at", "job_id"]
+    preserved_fields = ["url", "score", "title", "analysis_synthesis", "created_at", "job_id", "deleted"]
     
     # Create a new report with preserved fields
     dummy_report = {field: original_report.get(field) for field in preserved_fields if field in original_report}
     
     # Add dummy flag
     dummy_report["dummy"] = True
+    
+    # Ensure deleted field exists with default value
+    if "deleted" not in dummy_report:
+        dummy_report["deleted"] = False
     
     # Replace analysis_items with dummy entries
     dummy_report["analysis_items"] = [
