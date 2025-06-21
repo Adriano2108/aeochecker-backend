@@ -133,33 +133,106 @@ class CompetitorLandscapeAnalyzer(BaseAnalyzer):
                 competitors_lists.append(parsed_list)
         return competitors_lists
 
+    def _normalize_company_name(self, name: str) -> str:
+        """
+        Normalize company name for comparison by:
+        - Converting to lowercase
+        - Removing spaces, dashes, periods, and special characters
+        - Removing common suffixes like Inc, Corp, Group, etc.
+        """
+        if not name:
+            return ""
+            
+        # Convert to lowercase
+        normalized = name.lower()
+        
+        # Remove common domain extensions
+        normalized = re.sub(r'\.com$|\.org$|\.net$|\.co$', '', normalized)
+        
+        # Remove common business suffixes (must be at the end of the name)
+        suffixes = [
+            r'\s+inc\.?$', r'\s+corp\.?$', r'\s+corporation$', r'\s+company$',
+            r'\s+group$', r'\s+holding$', r'\s+holdings$', r'\s+ltd\.?$',
+            r'\s+limited$', r'\s+llc$', r'\s+co\.?$', r'\s+&\s+co\.?$', r'\s+original$', r'\s+originals$'
+        ]
+        for suffix in suffixes:
+            normalized = re.sub(suffix, '', normalized)
+        
+        # Remove all spaces, dashes, periods, and special characters
+        normalized = re.sub(r'[\s\-\.\,\'\"\(\)\&]', '', normalized)
+        
+        return normalized.strip()
+
+    def _should_group_companies(self, name1: str, name2: str) -> bool:
+        """
+        Determine if two company names should be grouped together.
+        Uses normalized names and checks if one is a substring of the other.
+        """
+        norm1 = self._normalize_company_name(name1)
+        norm2 = self._normalize_company_name(name2)
+        
+        if not norm1 or not norm2:
+            return False
+            
+        # Exact match after normalization
+        if norm1 == norm2:
+            return True
+            
+        # Check if one is a substring of the other (minimum 3 characters to avoid issues)
+        if len(norm1) >= 3 and len(norm2) >= 3:
+            if norm1 in norm2 or norm2 in norm1:
+                return True
+        
+        return False
+
     def _count_and_rank_competitors(self, competitors_lists: list) -> list:
-        """Count and rank competitors based on frequency of mentions."""
-        competitor_counter = Counter()
-        original_casing_counts = Counter()
-        original_casing_map = {}
-
+        """Count and rank competitors based on frequency of mentions, grouping similar names."""
+        # First pass: collect all competitors and group similar ones
+        competitor_groups = []  # List of lists, each sublist contains similar company names
+        all_competitors = []
+        
+        # Flatten all competitor lists
         for lst in competitors_lists:
-            for comp in lst:
-                normalized_comp = comp.lower()
-                competitor_counter[normalized_comp] += 1
-                # Track counts for each original casing of the normalized name
-                original_casing_counts[(normalized_comp, comp)] += 1
-                # Update the map to store the most frequent original casing
-                current_most_frequent_casing = original_casing_map.get(normalized_comp)
-                if current_most_frequent_casing is None or \
-                   original_casing_counts[(normalized_comp, comp)] > original_casing_counts.get((normalized_comp, current_most_frequent_casing), 0):
-                    original_casing_map[normalized_comp] = comp
-
-        # Get sorted competitors by count (using normalized names)
-        sorted_normalized = competitor_counter.most_common()
-
-        # Map back to the most frequent original casing
-        ranked_competitors = []
-        for normalized_name, count in sorted_normalized:
-            original_name = original_casing_map.get(normalized_name, normalized_name)
-            ranked_competitors.append((original_name, count))
-
+            all_competitors.extend(lst)
+        
+        # Group similar competitors
+        for comp in all_competitors:
+            comp = comp.strip()
+            if not comp:
+                continue
+                
+            # Find if this competitor should be grouped with an existing group
+            grouped = False
+            for group in competitor_groups:
+                # Check if current competitor should be grouped with any competitor in this group
+                if any(self._should_group_companies(comp, existing_comp) for existing_comp in group):
+                    group.append(comp)
+                    grouped = True
+                    break
+            
+            # If not grouped, create a new group
+            if not grouped:
+                competitor_groups.append([comp])
+        
+        # Second pass: count occurrences and select representative name for each group
+        group_counts = []
+        for group in competitor_groups:
+            count = len(group)
+            
+            # Select the most common original name in the group, or shortest if tied
+            name_counter = Counter(group)
+            most_common_names = name_counter.most_common()
+            
+            # If there's a tie in frequency, prefer the shortest name
+            max_count = most_common_names[0][1]
+            candidates = [name for name, freq in most_common_names if freq == max_count]
+            representative_name = min(candidates, key=len)  # Shortest name among most frequent
+            
+            group_counts.append((representative_name, count))
+        
+        # Sort by count (descending)
+        ranked_competitors = sorted(group_counts, key=lambda x: x[1], reverse=True)
+        
         return ranked_competitors
 
     def _calculate_score(self, competitor_counter: Counter, company_name: str) -> tuple:

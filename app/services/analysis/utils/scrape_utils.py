@@ -10,6 +10,7 @@ import re
 from typing import Tuple, Dict, List, Any
 from urllib.parse import urljoin, urlparse, urlunparse
 from app.services.analysis.utils.llm_utils import query_openai
+import asyncio
 
 CRAWLER_HEADERS = {
     'User-Agent': 'Mozilla/5.0 (compatible; Googlebot/2.1; +http://www.google.com/bot.html)'
@@ -28,44 +29,93 @@ async def scrape_website(url: str) -> Tuple[BeautifulSoup, str]:
         - soup: BeautifulSoup object of the parsed HTML
         - all_text: Extracted text content from the website
     """
-    headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/58.0.3029.110 Safari/537.3"}
+    # More realistic browser headers to avoid bot detection
+    headers = {
+        "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7",
+        "Accept-Language": "en-US,en;q=0.9",
+        "Accept-Encoding": "gzip, deflate, br",
+        "DNT": "1",
+        "Connection": "keep-alive",
+        "Upgrade-Insecure-Requests": "1",
+        "Sec-Fetch-Dest": "document",
+        "Sec-Fetch-Mode": "navigate",
+        "Sec-Fetch-Site": "none",
+        "Cache-Control": "max-age=0"
+    }
     
-    async with httpx.AsyncClient() as client:
-        response = await client.get(url, headers=headers, follow_redirects=True)
-        
-        soup = BeautifulSoup(response.text, "html.parser")
-
-        # Handle meta-refresh redirects
-        meta = soup.find("meta", attrs={"http-equiv": re.compile("^refresh$", re.I)})
-        if meta:
-            content = meta.get("content", "")
-            match = re.search(r'url=(.+)', content, re.IGNORECASE)
-            if match:
-                redirect_url = match.group(1).strip()
-                redirect_url = urljoin(str(response.url), redirect_url)
-                response = await client.get(redirect_url, headers=headers, follow_redirects=True)
-                soup = BeautifulSoup(response.text, "html.parser")
-
-        # Check for 'Redirecting...' or empty content, and try alternative www/non-www
-        def is_redirecting_only(soup):
-            body = soup.body
-            if body and body.get_text(strip=True).lower() in ["redirecting...", "redirecting", ""]:
-                return True
-            return False
-
-        tried_alternative = False
-        while is_redirecting_only(soup) and not tried_alternative:
-            parsed = urlparse(url)
-            netloc = parsed.netloc
-            if netloc.startswith("www."):
-                alt_netloc = netloc[4:]
-            else:
-                alt_netloc = "www." + netloc
-            alt_url = parsed._replace(netloc=alt_netloc).geturl()
-            response = await client.get(alt_url, headers=headers, follow_redirects=True)
-            soup = BeautifulSoup(response.text, "html.parser")
-            tried_alternative = True
+    # Reduced timeout settings for quick failure
+    timeout_config = httpx.Timeout(
+        connect=8.0,   # Time to establish connection
+        read=12.0,     # Time to read response
+        write=8.0,     # Time to write request
+        pool=5.0       # Time to get connection from pool
+    )
+    
+    try:
+        async with httpx.AsyncClient(
+            timeout=timeout_config,
+            follow_redirects=True,
+            verify=True  # SSL verification
+        ) as client:
+            print(f"Attempting to scrape {url}")
             
+            response = await client.get(url, headers=headers)
+            response.raise_for_status()  # Raise an exception for bad status codes
+            
+            soup = BeautifulSoup(response.text, "html.parser")
+
+            # Handle meta-refresh redirects
+            meta = soup.find("meta", attrs={"http-equiv": re.compile("^refresh$", re.I)})
+            if meta:
+                content = meta.get("content", "")
+                match = re.search(r'url=(.+)', content, re.IGNORECASE)
+                if match:
+                    redirect_url = match.group(1).strip()
+                    redirect_url = urljoin(str(response.url), redirect_url)
+                    response = await client.get(redirect_url, headers=headers)
+                    soup = BeautifulSoup(response.text, "html.parser")
+
+            # Check for 'Redirecting...' or empty content, and try alternative www/non-www
+            def is_redirecting_only(soup):
+                body = soup.body
+                if body and body.get_text(strip=True).lower() in ["redirecting...", "redirecting", ""]:
+                    return True
+                return False
+
+            tried_alternative = False
+            while is_redirecting_only(soup) and not tried_alternative:
+                parsed = urlparse(url)
+                netloc = parsed.netloc
+                if netloc.startswith("www."):
+                    alt_netloc = netloc[4:]
+                else:
+                    alt_netloc = "www." + netloc
+                alt_url = parsed._replace(netloc=alt_netloc).geturl()
+                response = await client.get(alt_url, headers=headers)
+                soup = BeautifulSoup(response.text, "html.parser")
+                tried_alternative = True
+                    
+    except httpx.TimeoutException as e:
+        print(f"Timeout error while scraping {url}: {str(e)}")
+        raise Exception(f"Website took too long to respond: {url}")
+    except httpx.HTTPStatusError as e:
+        print(f"HTTP error while scraping {url}: {e.response.status_code}")
+        if e.response.status_code == 403:
+            raise Exception(f"Access forbidden (403) - website is blocking automated requests: {url}")
+        elif e.response.status_code == 429:
+            raise Exception(f"Rate limited (429) - website is blocking requests: {url}")
+        elif e.response.status_code == 404:
+            raise Exception(f"Page not found (404): {url}")
+        else:
+            raise Exception(f"HTTP error {e.response.status_code}: {url}")
+    except httpx.RequestError as e:
+        print(f"Request error while scraping {url}: {str(e)}")
+        raise Exception(f"Failed to connect to website: {url}")
+    except Exception as e:
+        print(f"Unexpected error while scraping {url}: {str(e)}")
+        raise
+    
     # Extract all text content for analysis
     all_text = soup.get_text(separator=' ', strip=True)
     
@@ -625,9 +675,10 @@ async def get_potential_sitemap_urls(url: str) -> List[str]:
 
 async def _validate_and_get_best_url(url: str) -> str:
     """
-    Validates a URL and determines whether to use www or non-www version based on:
-    1. HTTP status codes and redirects
-    2. Content availability
+    Validates a URL and determines the best working version by testing multiple variations:
+    1. Original URL
+    2. www vs non-www versions
+    3. Common retail subdomains (www2, shop, store, etc.)
     
     Returns the best URL to use for analysis.
     """
@@ -638,23 +689,47 @@ async def _validate_and_get_best_url(url: str) -> str:
     parsed_url = urlparse(url)
     domain = parsed_url.netloc
     
-    # Create www and non-www versions for testing
-    www_domain = f"www.{domain}" if not domain.startswith('www.') else domain
-    non_www_domain = domain[4:] if domain.startswith('www.') else domain
+    # Create variations to test
+    urls_to_check = []
     
-    www_url = urlunparse((parsed_url.scheme, www_domain, parsed_url.path, 
-                            parsed_url.params, parsed_url.query, parsed_url.fragment))
-    non_www_url = urlunparse((parsed_url.scheme, non_www_domain, parsed_url.path, 
+    # Original URL first
+    urls_to_check.append(url)
+    
+    # www vs non-www variations
+    if domain.startswith('www.'):
+        base_domain = domain[4:]
+        non_www_url = urlunparse((parsed_url.scheme, base_domain, parsed_url.path, 
                                 parsed_url.params, parsed_url.query, parsed_url.fragment))
+        urls_to_check.append(non_www_url)
+    else:
+        www_url = urlunparse((parsed_url.scheme, f"www.{domain}", parsed_url.path, 
+                            parsed_url.params, parsed_url.query, parsed_url.fragment))
+        urls_to_check.append(www_url)
     
-    urls_to_check = [www_url, non_www_url]
+    # Common retail/e-commerce subdomains
+    base_domain = domain[4:] if domain.startswith('www.') else domain
+    common_subdomains = ['www2', 'shop', 'store', 'en', 'us', 'global']
+    
+    for subdomain in common_subdomains:
+        subdomain_url = urlunparse((parsed_url.scheme, f"{subdomain}.{base_domain}", parsed_url.path, 
+                                  parsed_url.params, parsed_url.query, parsed_url.fragment))
+        urls_to_check.append(subdomain_url)
+    
     best_url = url  # Default to original URL
     best_score = -1
+    all_403_errors = True  # Track if all URLs return 403
     
-    async with httpx.AsyncClient(follow_redirects=True) as client:
+    # Quick timeout for validation
+    timeout_config = httpx.Timeout(connect=5.0, read=10.0, write=5.0, pool=5.0)
+    
+    async with httpx.AsyncClient(follow_redirects=True, timeout=timeout_config) as client:
         for check_url in urls_to_check:
             try:
-                response = await client.get(check_url, timeout=10.0)
+                response = await client.get(check_url)
+                
+                # If we got any non-403 response, the site isn't completely blocked
+                if response.status_code != 403:
+                    all_403_errors = False
                 
                 # Calculate a score based on status code and response size
                 score = 0
@@ -664,12 +739,15 @@ async def _validate_and_get_best_url(url: str) -> str:
                     score += 100
                 elif response.status_code >= 300 and response.status_code < 400:
                     score += 50  # Redirects are okay but not ideal
+                elif response.status_code == 403:
+                    score -= 25  # 403 is bad but still a valid response (bot blocking)
                 elif response.status_code >= 400:
-                    score -= 50  # Error codes are bad
+                    score -= 50  # Other error codes are worse
                 
-                # Prefer responses with more content
-                content_length = len(response.content)
-                score += min(content_length // 1000, 50)  # Up to 50 points for content
+                # Prefer responses with more content (only for successful responses)
+                if response.status_code < 400:
+                    content_length = len(response.content)
+                    score += min(content_length // 1000, 50)  # Up to 50 points for content
                 
                 # Check if this URL is better than our current best
                 if score > best_score:
@@ -677,12 +755,23 @@ async def _validate_and_get_best_url(url: str) -> str:
                     best_url = check_url
                     
                     # If we got a perfect score (200 status + content), no need to check further
-                    if response.status_code == 200 and content_length > 5000:
+                    if response.status_code == 200 and len(response.content) > 5000:
                         break
                         
             except Exception as e:
-                print(f"Error checking URL {check_url}: {str(e)}")
+                all_403_errors = False  # Other errors mean it's not just 403s
+                error_msg = str(e)
+                # Show HTTP status codes specifically
+                if hasattr(e, 'response') and hasattr(e.response, 'status_code'):
+                    error_msg = f"HTTP {e.response.status_code}"
+                    if e.response.status_code == 403:
+                        all_403_errors = True  # This was actually a 403
+                print(f"Error checking URL {check_url}: {error_msg}")
                 # Skip this URL if it errors out
+    
+    # If all URLs returned 403, the site is bot-blocked
+    if all_403_errors and best_score < 0:
+        print(f"Website appears to be blocking all automated requests (403 Forbidden)")
     
     return best_url
 
