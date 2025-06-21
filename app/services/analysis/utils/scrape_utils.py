@@ -732,7 +732,6 @@ async def check_robots_txt(url: str) -> Tuple[bool, List[str]]:
     base_url = urlunparse((parsed_url.scheme, parsed_url.netloc, '', '', '', ''))
     
     robots_url = urljoin(base_url, '/robots.txt')
-    print(f"[DEBUG] Checking robots.txt at: {robots_url}")
     sitemap_urls = []
     exists = False
     
@@ -742,16 +741,12 @@ async def check_robots_txt(url: str) -> Tuple[bool, List[str]]:
     try:
         async with httpx.AsyncClient() as client:
             response = await client.get(robots_url, headers=headers, timeout=10, follow_redirects=True)
-            print(f"[DEBUG] Robots.txt response status: {response.status_code}")
             if response.status_code == 200:
                 exists = True
                 
                 # Check if content is compressed
                 content_type = response.headers.get('content-type', '').lower()
                 content_encoding = response.headers.get('content-encoding', '').lower()
-                
-                print(f"[DEBUG] Content-Type: {content_type}")
-                print(f"[DEBUG] Content-Encoding: {content_encoding}")
                 
                 # Get the content
                 content = response.content
@@ -768,14 +763,10 @@ async def check_robots_txt(url: str) -> Tuple[bool, List[str]]:
                     'brotli' in content_encoding
                 )
                 
-                print(f"[DEBUG] Is gzipped: {is_gzipped}")
-                print(f"[DEBUG] Is brotli: {is_brotli}")
-                
                 # Decompress if compressed
                 if is_brotli and BROTLI_AVAILABLE:
                     try:
                         content = brotli.decompress(content)
-                        print(f"[DEBUG] Decompressed robots.txt content using brotli")
                     except Exception as e:
                         print(f"Warning: Failed to decompress brotli robots.txt: {e}")
                         # Try to use response.text as fallback
@@ -783,7 +774,6 @@ async def check_robots_txt(url: str) -> Tuple[bool, List[str]]:
                 elif is_gzipped:
                     try:
                         content = gzip.decompress(content)
-                        print(f"[DEBUG] Decompressed robots.txt content using gzip")
                     except Exception as e:
                         print(f"Warning: Failed to decompress gzipped robots.txt: {e}")
                         # Try to use response.text as fallback
@@ -818,12 +808,6 @@ async def check_robots_txt(url: str) -> Tuple[bool, List[str]]:
                 
                 # Extract Sitemap directives
                 robots_content = robots_text.splitlines()
-                print(f"[DEBUG] Robots.txt content has {len(robots_content)} lines")
-                
-                # Debug: Print actual content
-                print(f"[DEBUG] Robots.txt content:")
-                for i, line in enumerate(robots_content):
-                    print(f"[DEBUG] Line {i+1}: '{line}'")
                 
                 # Method 1: Standard sitemap parsing
                 for line in robots_content:
@@ -832,7 +816,6 @@ async def check_robots_txt(url: str) -> Tuple[bool, List[str]]:
                         # Use line_clean instead of line for splitting
                         sitemap_url = line_clean.split(':', 1)[1].strip()
                         sitemap_urls.append(sitemap_url)
-                        print(f"[DEBUG] Found sitemap URL (method 1): {sitemap_url}")
                 
                 # Method 2: Look for any line containing .xml (fallback)
                 for line in robots_content:
@@ -846,9 +829,7 @@ async def check_robots_txt(url: str) -> Tuple[bool, List[str]]:
                         for match in matches:
                             if match not in sitemap_urls:
                                 sitemap_urls.append(match)
-                                print(f"[DEBUG] Found sitemap URL (method 2): {match}")
                 
-                print(f"[DEBUG] Total sitemap URLs found: {len(sitemap_urls)}")
     except Exception as e:
         print(f"Warning: Could not fetch robots.txt: {e}")
     
@@ -865,23 +846,18 @@ async def is_valid_sitemap(url: str) -> bool:
         Boolean indicating if the URL is a valid sitemap
     """
     try:
-        print(f"[DEBUG] Validating sitemap: {url}")
         # Use randomized headers for better bot avoidance
         headers = _get_random_headers()
         async with httpx.AsyncClient() as client:
             response = await client.get(url, headers=headers, timeout=10, follow_redirects=True)
             
-            print(f"[DEBUG] Response status code: {response.status_code}")
-            
             # Check if the response is successful
             if response.status_code < 400:
                 # Check content type
                 content_type = response.headers.get('content-type', '').lower()
-                print(f"[DEBUG] Content type: {content_type}")
                 
                 # Get the content
                 content = response.content
-                print(f"[DEBUG] Content length: {len(content)} bytes")
                 
                 # Check if the content is gzipped (either by content-type or URL extension)
                 is_gzipped = (
@@ -890,13 +866,10 @@ async def is_valid_sitemap(url: str) -> bool:
                     url.lower().endswith('.gz')
                 )
                 
-                print(f"[DEBUG] Is gzipped: {is_gzipped}")
-                
                 # Decompress if gzipped
                 if is_gzipped:
                     try:
                         content = gzip.decompress(content)
-                        print(f"[DEBUG] Decompressed content length: {len(content)} bytes")
                     except Exception as e:
                         print(f"Warning: Failed to decompress gzipped content for {url}: {e}")
                         return False
@@ -904,13 +877,10 @@ async def is_valid_sitemap(url: str) -> bool:
                 # Convert to text
                 try:
                     content_text = content.decode('utf-8')
-                    print(f"[DEBUG] Text content length: {len(content_text)} characters")
-                    print(f"[DEBUG] First 200 chars: {content_text[:200]}")
                 except UnicodeDecodeError:
                     # Try other encodings
                     try:
                         content_text = content.decode('latin-1')
-                        print(f"[DEBUG] Text content length (latin-1): {len(content_text)} characters")
                     except UnicodeDecodeError:
                         print(f"Warning: Could not decode content for {url}")
                         return False
@@ -919,17 +889,11 @@ async def is_valid_sitemap(url: str) -> bool:
                 if any(x in content_type for x in ['application/xml', 'text/xml']) or is_gzipped:
                     # Verify that it contains sitemap-specific elements
                     is_sitemap = bool(re.search(r'<\s*(urlset|sitemapindex)[^>]*>', content_text))
-                    print(f"[DEBUG] Contains sitemap elements: {is_sitemap}")
                     
                     # Additional check for URL entries
                     has_urls = bool(re.search(r'<\s*url\s*>|<\s*sitemap\s*>', content_text))
-                    print(f"[DEBUG] Contains URL/sitemap entries: {has_urls}")
                     
-                    result = is_sitemap and has_urls
-                    print(f"[DEBUG] Final validation result: {result}")
-                    return result
-                else:
-                    print(f"[DEBUG] Content type check failed")
+                    return is_sitemap and has_urls
                     
             return False
     except Exception as e:
@@ -950,25 +914,17 @@ async def get_potential_sitemap_urls(url: str) -> List[str]:
     parsed_url = urlparse(url)
     base_url = urlunparse((parsed_url.scheme, parsed_url.netloc, '', '', '', ''))
     
-    print(f"[DEBUG] Getting potential sitemap URLs for base_url: {base_url}")
-    
     # Check common sitemap locations
     potential_urls = set()
     potential_urls.add(urljoin(base_url, '/sitemap.xml'))
     potential_urls.add(urljoin(base_url, '/sitemap_index.xml'))
     potential_urls.add(urljoin(base_url, '/sitemap-index.xml'))
     
-    print(f"[DEBUG] Common sitemap locations: {sorted(list(potential_urls))}")
-    
     # Add sitemaps from robots.txt
     _, robot_sitemaps = await check_robots_txt(url)
-    print(f"[DEBUG] Sitemaps from robots.txt: {robot_sitemaps}")
     potential_urls.update(robot_sitemaps)
     
-    final_urls = sorted(list(potential_urls))
-    print(f"[DEBUG] Final potential sitemap URLs: {final_urls}")
-    
-    return final_urls
+    return sorted(list(potential_urls))
 
 async def _validate_and_get_best_url(url: str) -> str:
     """
