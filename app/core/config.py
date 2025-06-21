@@ -26,6 +26,7 @@ class Settings(BaseSettings):
     OPENAI_API_KEY: str = os.getenv("OPENAI_API_KEY", "")
     ANTHROPIC_API_KEY: str = os.getenv("ANTHROPIC_API_KEY", "")
     GEMINI_API_KEY: str = os.getenv("GEMINI_API_KEY", "")
+    PERPLEXITY_API_KEY: str = os.getenv("PERPLEXITY_API_KEY", "")
     
     # Production Stripe Variables
     STRIPE_SECRET_KEY_PROD: str = os.getenv("STRIPE_SECRET_KEY_PROD", "")

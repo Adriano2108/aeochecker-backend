@@ -13,7 +13,7 @@ from urllib.parse import urljoin, urlparse
 
 from app.services.analysis.base import BaseAnalyzer
 from app.core.config import settings
-from app.services.analysis.utils.llm_utils import query_openai, query_anthropic, query_gemini
+from app.services.analysis.utils.llm_utils import query_openai, query_anthropic, query_gemini, query_perplexity
 
 class AiPresenceAnalyzer(BaseAnalyzer):
     """Analyzer for checking AI presence of a company (how well AI models know about it)."""
@@ -46,6 +46,11 @@ class AiPresenceAnalyzer(BaseAnalyzer):
         else:
           responses["gemini"] = "API key not configured"
         
+        if settings.PERPLEXITY_API_KEY:
+          tasks.append(query_perplexity(prompt))
+        else:
+          responses["perplexity"] = "API key not configured"
+        
         if tasks:
           results = await asyncio.gather(*tasks, return_exceptions=True)
           
@@ -57,6 +62,8 @@ class AiPresenceAnalyzer(BaseAnalyzer):
                 responses["anthropic"] = f"Error: {str(result)}"
               elif i == 2 and "gemini" not in responses:
                 responses["gemini"] = f"Error: {str(result)}"
+              elif i == 3 and "perplexity" not in responses:
+                responses["perplexity"] = f"Error: {str(result)}"
             else:
               model_name, response_text = result
               responses[model_name] = response_text
@@ -64,35 +71,118 @@ class AiPresenceAnalyzer(BaseAnalyzer):
         return responses
     
     @staticmethod
+    def _score_name_match(company_name: str, response_lower: str) -> Tuple[int, bool]:
+        """Score name matching in LLM response."""
+        if company_name and company_name.lower() in response_lower:
+            return 36, True
+        return 0, False
+
+    @staticmethod  
+    def _score_product_match(products_services: list, response_lower: str) -> Tuple[int, bool]:
+        """Score product/service matching in LLM response using 3-tier approach."""
+        if not products_services:
+            return 0, False
+            
+        # Tier 1: Check if any whole product string is present (32 points)
+        for product in products_services:
+            if product and product.lower() in response_lower:
+                return 32, True
+        
+        # Tier 2: Check without spaces for each product (32 points)
+        response_no_spaces = response_lower.replace(' ', '')
+        for product in products_services:
+            if product:
+                product_no_spaces = product.lower().replace(' ', '')
+                if product_no_spaces in response_no_spaces:
+                    return 32, True
+        
+        # Tier 3: Check individual keywords across all products with proportional scoring
+        all_keywords = []
+        for product in products_services:
+            if product:
+                product_keywords = [word.strip() for word in product.lower().split() if len(word.strip()) > 2]
+                all_keywords.extend(product_keywords)
+        
+        # Remove duplicates while preserving order
+        unique_keywords = list(dict.fromkeys(all_keywords))
+        
+        if unique_keywords:
+            points_per_keyword = 32 / len(unique_keywords)
+            found_keywords = 0
+            for keyword in unique_keywords:
+                if keyword in response_lower:
+                    found_keywords += 1
+            
+            if found_keywords > 0:
+                product_score = min(32, found_keywords * points_per_keyword)
+                return int(product_score), True
+        
+        return 0, False
+
+    @staticmethod
+    def _score_industry_match(industry: str, response_lower: str) -> Tuple[int, bool]:
+        """Score industry matching in LLM response using 3-tier approach."""
+        if not industry:
+            return 0, False
+            
+        industry_text = industry.lower()
+        
+        # Tier 1: Check if whole industry string is present (32 points)
+        if industry_text in response_lower:
+            return 32, True
+        
+        # Tier 2: Check without spaces (32 points)
+        industry_no_spaces = industry_text.replace(' ', '')
+        response_no_spaces = response_lower.replace(' ', '')
+        if industry_no_spaces in response_no_spaces:
+            return 32, True
+        
+        # Tier 3: Check individual keywords with proportional scoring
+        industry_keywords = [word.strip() for word in industry_text.split() if len(word.strip()) > 2]
+        if industry_keywords:
+            points_per_keyword = 32 / len(industry_keywords)
+            found_keywords = 0
+            for keyword in industry_keywords:
+                if keyword in response_lower:
+                    found_keywords += 1
+            
+            if found_keywords > 0:
+                industry_score = min(32, found_keywords * points_per_keyword)
+                return int(industry_score), True
+        
+        return 0, False
+
+    @staticmethod
     def _score_llm_response(company_facts: dict, response: str) -> Tuple[float, dict]:
         score = 0
         details = {}
         response_lower = response.lower()
 
-        if company_facts['name'] and company_facts['name'].lower() in response_lower:
-            score += 25
-            details['name'] = True
-        else:
-            details['name'] = False
+        # Score name matching
+        name_score, name_found = AiPresenceAnalyzer._score_name_match(
+            company_facts['name'], response_lower
+        )
+        score += name_score
+        details['name'] = name_found
 
-        if any(prod and prod.lower() in response_lower for prod in company_facts['key_products_services']):
-            score += 25
-            details['product'] = True
-        else:
-            details['product'] = False
+        # Score product matching
+        product_score, product_found = AiPresenceAnalyzer._score_product_match(
+            company_facts['key_products_services'], response_lower
+        )
+        score += product_score
+        details['product'] = product_found
 
-        industry_keywords = ["industry"]
-        industry_found = (company_facts['industry'] and company_facts['industry'].lower() in response_lower) or \
-                            any(keyword in response_lower for keyword in industry_keywords)
-        if industry_found:
-            score += 25
-            details['industry'] = True
-        else:
-            details['industry'] = False
+        # Score industry matching
+        industry_score, industry_found = AiPresenceAnalyzer._score_industry_match(
+            company_facts['industry'], response_lower
+        )
+        score += industry_score
+        details['industry'] = industry_found
 
+        # Check for uncertainty markers
         if any(x in response_lower for x in ["don't know", "unable to", "unknown", "cannot confidently", "i apologize", "i don't have", "cannot find", "cannot tell", "can't tell", "can't find"]):
             if score > 0:
-              score -= 2
+              score -= 5
             details['uncertainty'] = True
         else:
             details['uncertainty'] = False
@@ -104,6 +194,7 @@ class AiPresenceAnalyzer(BaseAnalyzer):
         """
         # 1. Query LLMs
         llm_responses = await self._query_llms(company_facts)
+        print(json.dumps(llm_responses, indent=4))
         # 2. Score each response
         scores = {}
         details = {}
@@ -124,5 +215,5 @@ class AiPresenceAnalyzer(BaseAnalyzer):
             
             analysis_result[model].update(details[model])
             analysis_result[model]['score'] = scores[model]
-        
+
         return avg_score, analysis_result

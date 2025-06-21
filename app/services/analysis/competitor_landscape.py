@@ -7,7 +7,7 @@ from app.services.analysis.base import BaseAnalyzer
 from app.core.config import settings
 import asyncio
 import ast
-from app.services.analysis.utils.llm_utils import query_openai, query_anthropic, query_gemini
+from app.services.analysis.utils.llm_utils import query_openai, query_anthropic, query_gemini, query_perplexity
 from collections import Counter
 import re
 from app.schemas.analysis import CompetitorLandscapeAnalysisResult, CompetitorEntry
@@ -62,6 +62,11 @@ class CompetitorLandscapeAnalyzer(BaseAnalyzer):
         else:
             print("Gemini API key not configured")
             responses["gemini"] = "API key not configured"
+        if settings.PERPLEXITY_API_KEY:
+            tasks.append(query_perplexity(prompt))
+        else:
+            print("Perplexity API key not configured")
+            responses["perplexity"] = "API key not configured"
         if tasks:
             results = await asyncio.gather(*tasks, return_exceptions=True)
             for i, result in enumerate(results):
@@ -72,6 +77,8 @@ class CompetitorLandscapeAnalyzer(BaseAnalyzer):
                         responses["anthropic"] = f"Error: {str(result)}"
                     elif i == 2 and "gemini" not in responses:
                         responses["gemini"] = f"Error: {str(result)}"
+                    elif i == 3 and "perplexity" not in responses:
+                        responses["perplexity"] = f"Error: {str(result)}"
                 else:
                     model_name, response_text = result
                     responses[model_name] = response_text

@@ -94,6 +94,13 @@ def generate_dummy_report(original_report: dict) -> dict:
                     "uncertainty": False,
                     "score": 0
                 },
+                "perplexity": {
+                    "name": False,
+                    "product": False,
+                    "industry": False,
+                    "uncertainty": False,
+                    "score": 0
+                },
                 "score": 0
             },
         },

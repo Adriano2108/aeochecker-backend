@@ -37,4 +37,39 @@ async def query_gemini(prompt: str, temperature: float = 0.1):
             temperature=temperature
         )
     )
-    return "gemini", response.text 
+    return "gemini", response.text
+
+async def query_perplexity(prompt: str, temperature: float = 0.1):
+    import httpx
+    
+    headers = {
+        "Authorization": f"Bearer {settings.PERPLEXITY_API_KEY}",
+        "Content-Type": "application/json"
+    }
+    
+    data = {
+        "model": "sonar",
+        "messages": [
+            {
+                "role": "system",
+                "content": "You are a helpful assistant that provides factual information about companies. Please do not invent facts, you are allowed to say you don't know."
+            },
+            {
+                "role": "user",
+                "content": prompt
+            }
+        ],
+        "temperature": temperature,
+        "max_tokens": 150
+    }
+    
+    async with httpx.AsyncClient() as client:
+        response = await client.post(
+            "https://api.perplexity.ai/chat/completions",
+            headers=headers,
+            json=data,
+            timeout=30.0
+        )
+        response.raise_for_status()
+        result = response.json()
+        return "perplexity", result["choices"][0]["message"]["content"] 
