@@ -7,33 +7,41 @@ import json
 import httpx
 from bs4 import BeautifulSoup
 import re
+import random
+import asyncio
 from typing import Tuple, Dict, List, Any
 from urllib.parse import urljoin, urlparse, urlunparse
 from app.services.analysis.utils.llm_utils import query_openai
-import asyncio
 
 CRAWLER_HEADERS = {
     'User-Agent': 'Mozilla/5.0 (compatible; Googlebot/2.1; +http://www.google.com/bot.html)'
 }
 
-async def scrape_website(url: str) -> Tuple[BeautifulSoup, str]:
+def _get_random_headers() -> Dict[str, str]:
     """
-    Scrape a website and return the BeautifulSoup object and extracted text.
-    Handles redirects and www vs non-www variations.
+    Generate randomized browser headers to avoid detection.
+    """
+    user_agents = [
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36",
+        "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36",
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36 Edg/120.0.0.0",
+        "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.2.1 Safari/605.1.15",
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:121.0) Gecko/20100101 Firefox/121.0",
+        "Mozilla/5.0 (Macintosh; Intel Mac OS X 10.15; rv:121.0) Gecko/20100101 Firefox/121.0"
+    ]
     
-    Args:
-        url: The URL of the website to scrape
-        
-    Returns:
-        Tuple containing:
-        - soup: BeautifulSoup object of the parsed HTML
-        - all_text: Extracted text content from the website
-    """
-    # More realistic browser headers to avoid bot detection
-    headers = {
-        "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+    accept_languages = [
+        "en-US,en;q=0.9",
+        "en-GB,en;q=0.9",
+        "en-US,en;q=0.8,es;q=0.7",
+        "en-US,en;q=0.9,fr;q=0.8",
+        "en-US,en;q=0.9,de;q=0.8"
+    ]
+    
+    return {
+        "User-Agent": random.choice(user_agents),
         "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7",
-        "Accept-Language": "en-US,en;q=0.9",
+        "Accept-Language": random.choice(accept_languages),
         "Accept-Encoding": "gzip, deflate, br",
         "DNT": "1",
         "Connection": "keep-alive",
@@ -41,85 +49,210 @@ async def scrape_website(url: str) -> Tuple[BeautifulSoup, str]:
         "Sec-Fetch-Dest": "document",
         "Sec-Fetch-Mode": "navigate",
         "Sec-Fetch-Site": "none",
-        "Cache-Control": "max-age=0"
+        "Sec-Fetch-User": "?1",
+        "Cache-Control": "max-age=0",
+        "sec-ch-ua": '"Not_A Brand";v="8", "Chromium";v="120", "Google Chrome";v="120"',
+        "sec-ch-ua-mobile": "?0",
+        "sec-ch-ua-platform": '"Windows"'
     }
+
+def _get_conservative_headers() -> Dict[str, str]:
+    """
+    Generate very conservative headers that mimic a regular browser session.
+    Used for sites with aggressive bot detection.
+    """
+    return {
+        "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.2.1 Safari/605.1.15",
+        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+        "Accept-Language": "en-US,en;q=0.5",
+        "Accept-Encoding": "gzip, deflate",
+        "Connection": "keep-alive",
+        "Upgrade-Insecure-Requests": "1"
+    }
+
+async def scrape_website_conservative(url: str) -> Tuple[BeautifulSoup, str]:
+    """
+    Conservative scraping approach for heavily protected websites.
+    Uses minimal headers and longer delays.
+    """
+    print(f"Attempting conservative scraping for {url}")
     
-    # Reduced timeout settings for quick failure
+    # Very conservative timeout settings
     timeout_config = httpx.Timeout(
-        connect=8.0,   # Time to establish connection
-        read=12.0,     # Time to read response
-        write=8.0,     # Time to write request
-        pool=5.0       # Time to get connection from pool
+        connect=15.0,   
+        read=20.0,      
+        write=15.0,     
+        pool=10.0       
     )
     
     try:
+        headers = _get_conservative_headers()
+        
         async with httpx.AsyncClient(
             timeout=timeout_config,
             follow_redirects=True,
-            verify=True  # SSL verification
+            verify=True
         ) as client:
-            print(f"Attempting to scrape {url}")
+            # Add a longer initial delay
+            await asyncio.sleep(random.uniform(3.0, 6.0))
             
             response = await client.get(url, headers=headers)
-            response.raise_for_status()  # Raise an exception for bad status codes
+            response.raise_for_status()
             
             soup = BeautifulSoup(response.text, "html.parser")
-
-            # Handle meta-refresh redirects
-            meta = soup.find("meta", attrs={"http-equiv": re.compile("^refresh$", re.I)})
-            if meta:
-                content = meta.get("content", "")
-                match = re.search(r'url=(.+)', content, re.IGNORECASE)
-                if match:
-                    redirect_url = match.group(1).strip()
-                    redirect_url = urljoin(str(response.url), redirect_url)
-                    response = await client.get(redirect_url, headers=headers)
-                    soup = BeautifulSoup(response.text, "html.parser")
-
-            # Check for 'Redirecting...' or empty content, and try alternative www/non-www
-            def is_redirecting_only(soup):
-                body = soup.body
-                if body and body.get_text(strip=True).lower() in ["redirecting...", "redirecting", ""]:
-                    return True
-                return False
-
-            tried_alternative = False
-            while is_redirecting_only(soup) and not tried_alternative:
-                parsed = urlparse(url)
-                netloc = parsed.netloc
-                if netloc.startswith("www."):
-                    alt_netloc = netloc[4:]
-                else:
-                    alt_netloc = "www." + netloc
-                alt_url = parsed._replace(netloc=alt_netloc).geturl()
-                response = await client.get(alt_url, headers=headers)
-                soup = BeautifulSoup(response.text, "html.parser")
-                tried_alternative = True
-                    
-    except httpx.TimeoutException as e:
-        print(f"Timeout error while scraping {url}: {str(e)}")
-        raise Exception(f"Website took too long to respond: {url}")
-    except httpx.HTTPStatusError as e:
-        print(f"HTTP error while scraping {url}: {e.response.status_code}")
-        if e.response.status_code == 403:
-            raise Exception(f"Access forbidden (403) - website is blocking automated requests: {url}")
-        elif e.response.status_code == 429:
-            raise Exception(f"Rate limited (429) - website is blocking requests: {url}")
-        elif e.response.status_code == 404:
-            raise Exception(f"Page not found (404): {url}")
-        else:
-            raise Exception(f"HTTP error {e.response.status_code}: {url}")
-    except httpx.RequestError as e:
-        print(f"Request error while scraping {url}: {str(e)}")
-        raise Exception(f"Failed to connect to website: {url}")
+            all_text = soup.get_text(separator=' ', strip=True)
+            
+            return soup, all_text
+            
     except Exception as e:
-        print(f"Unexpected error while scraping {url}: {str(e)}")
+        print(f"Conservative scraping also failed: {str(e)}")
         raise
+
+async def scrape_website(url: str, max_retries: int = 3) -> Tuple[BeautifulSoup, str]:
+    """
+    Scrape a website and return the BeautifulSoup object and extracted text.
+    Handles redirects, www vs non-www variations, and includes anti-bot detection measures.
     
-    # Extract all text content for analysis
-    all_text = soup.get_text(separator=' ', strip=True)
+    Args:
+        url: The URL of the website to scrape
+        max_retries: Maximum number of retry attempts for 403 errors
+        
+    Returns:
+        Tuple containing:
+        - soup: BeautifulSoup object of the parsed HTML
+        - all_text: Extracted text content from the website
+    """
     
-    return soup, all_text
+    # Extended timeout settings for better stability
+    timeout_config = httpx.Timeout(
+        connect=10.0,   # Time to establish connection
+        read=15.0,      # Time to read response
+        write=10.0,     # Time to write request
+        pool=8.0        # Time to get connection from pool
+    )
+    
+    last_exception = None
+    
+    for attempt in range(max_retries):
+        try:
+            # Get fresh headers for each attempt
+            headers = _get_random_headers()
+            
+            # Add random delay between attempts (except first attempt)
+            if attempt > 0:
+                delay = random.uniform(2.0, 5.0)
+                print(f"Waiting {delay:.1f} seconds before retry {attempt + 1}")
+                await asyncio.sleep(delay)
+            
+            async with httpx.AsyncClient(
+                timeout=timeout_config,
+                follow_redirects=True,
+                verify=True,  # SSL verification
+                limits=httpx.Limits(max_keepalive_connections=5, max_connections=10)
+            ) as client:
+                print(f"Attempting to scrape {url} (attempt {attempt + 1}/{max_retries})")
+                
+                response = await client.get(url, headers=headers)
+                response.raise_for_status()  # Raise an exception for bad status codes
+                
+                soup = BeautifulSoup(response.text, "html.parser")
+
+                # Handle meta-refresh redirects
+                meta = soup.find("meta", attrs={"http-equiv": re.compile("^refresh$", re.I)})
+                if meta:
+                    content = meta.get("content", "")
+                    match = re.search(r'url=(.+)', content, re.IGNORECASE)
+                    if match:
+                        redirect_url = match.group(1).strip()
+                        redirect_url = urljoin(str(response.url), redirect_url)
+                        # Add small delay before following redirect
+                        await asyncio.sleep(random.uniform(1.0, 2.0))
+                        response = await client.get(redirect_url, headers=headers)
+                        soup = BeautifulSoup(response.text, "html.parser")
+
+                # Check for 'Redirecting...' or empty content, and try alternative www/non-www
+                def is_redirecting_only(soup):
+                    body = soup.body
+                    if body and body.get_text(strip=True).lower() in ["redirecting...", "redirecting", ""]:
+                        return True
+                    return False
+
+                tried_alternative = False
+                while is_redirecting_only(soup) and not tried_alternative:
+                    parsed = urlparse(url)
+                    netloc = parsed.netloc
+                    if netloc.startswith("www."):
+                        alt_netloc = netloc[4:]
+                    else:
+                        alt_netloc = "www." + netloc
+                    alt_url = parsed._replace(netloc=alt_netloc).geturl()
+                    # Add small delay before trying alternative
+                    await asyncio.sleep(random.uniform(1.0, 2.0))
+                    response = await client.get(alt_url, headers=headers)
+                    soup = BeautifulSoup(response.text, "html.parser")
+                    tried_alternative = True
+                
+                # Extract all text content for analysis
+                all_text = soup.get_text(separator=' ', strip=True)
+                
+                # Success! Return the results
+                return soup, all_text
+                        
+        except httpx.TimeoutException as e:
+            last_exception = e
+            print(f"Timeout error while scraping {url} (attempt {attempt + 1}): {str(e)}")
+            if attempt == max_retries - 1:
+                raise Exception(f"Website took too long to respond after {max_retries} attempts: {url}")
+            
+        except httpx.HTTPStatusError as e:
+            last_exception = e
+            print(f"HTTP error while scraping {url} (attempt {attempt + 1}): {e.response.status_code}")
+            
+            if e.response.status_code == 403:
+                # For 403 errors, try different strategies
+                if attempt < max_retries - 1:
+                    print(f"Got 403 error, will retry with different headers and delay")
+                    continue
+                else:
+                    # Last attempt - try conservative approach
+                    print(f"All standard attempts failed, trying conservative approach...")
+                    try:
+                        return await scrape_website_conservative(url)
+                    except Exception as conservative_error:
+                        print(f"Conservative approach also failed: {conservative_error}")
+                        raise Exception(f"Access forbidden (403) - website is blocking automated requests after {max_retries} attempts and conservative fallback: {url}")
+            elif e.response.status_code == 429:
+                # Rate limiting - wait longer before retry
+                if attempt < max_retries - 1:
+                    delay = random.uniform(5.0, 10.0)
+                    print(f"Rate limited, waiting {delay:.1f} seconds before retry")
+                    await asyncio.sleep(delay)
+                    continue
+                else:
+                    raise Exception(f"Rate limited (429) - website is blocking requests after {max_retries} attempts: {url}")
+            elif e.response.status_code == 404:
+                raise Exception(f"Page not found (404): {url}")
+            else:
+                if attempt == max_retries - 1:
+                    raise Exception(f"HTTP error {e.response.status_code} after {max_retries} attempts: {url}")
+                
+        except httpx.RequestError as e:
+            last_exception = e
+            print(f"Request error while scraping {url} (attempt {attempt + 1}): {str(e)}")
+            if attempt == max_retries - 1:
+                raise Exception(f"Failed to connect to website after {max_retries} attempts: {url}")
+                
+        except Exception as e:
+            last_exception = e
+            print(f"Unexpected error while scraping {url} (attempt {attempt + 1}): {str(e)}")
+            if attempt == max_retries - 1:
+                raise
+    
+    # If we get here, all retries failed
+    if last_exception:
+        raise last_exception
+    else:
+        raise Exception(f"Failed to scrape {url} after {max_retries} attempts")
 
 def _extract_industry_and_products(soup: BeautifulSoup, all_text: str) -> Dict[str, Any]:
     """
@@ -593,8 +726,8 @@ async def check_robots_txt(url: str) -> Tuple[bool, List[str]]:
     sitemap_urls = []
     exists = False
     
-    # Use the same headers as the main scraping function instead of Googlebot headers
-    headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/58.0.3029.110 Safari/537.3"}
+    # Use randomized headers for better bot avoidance
+    headers = _get_random_headers()
     
     try:
         async with httpx.AsyncClient() as client:
@@ -623,8 +756,8 @@ async def is_valid_sitemap(url: str) -> bool:
         Boolean indicating if the URL is a valid sitemap
     """
     try:
-        # Use the same headers as the main scraping function
-        headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/58.0.3029.110 Safari/537.3"}
+        # Use randomized headers for better bot avoidance
+        headers = _get_random_headers()
         async with httpx.AsyncClient() as client:
             response = await client.get(url, headers=headers, timeout=10, follow_redirects=True)
             
@@ -719,13 +852,15 @@ async def _validate_and_get_best_url(url: str) -> str:
     best_score = -1
     all_403_errors = True  # Track if all URLs return 403
     
-    # Quick timeout for validation
-    timeout_config = httpx.Timeout(connect=5.0, read=10.0, write=5.0, pool=5.0)
+    # Extended timeout for validation with better headers
+    timeout_config = httpx.Timeout(connect=8.0, read=12.0, write=8.0, pool=5.0)
     
     async with httpx.AsyncClient(follow_redirects=True, timeout=timeout_config) as client:
         for check_url in urls_to_check:
             try:
-                response = await client.get(check_url)
+                # Use randomized headers for each check
+                headers = _get_random_headers()
+                response = await client.get(check_url, headers=headers)
                 
                 # If we got any non-403 response, the site isn't completely blocked
                 if response.status_code != 403:
