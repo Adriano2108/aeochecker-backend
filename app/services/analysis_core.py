@@ -106,28 +106,96 @@ class AnalysisService:
     @classmethod
     async def _scrape_website_data(cls, job_id: str, url: str, job_ref) -> tuple:
         """Scrape website content and extract company facts."""
-        # Scrape website
-        soup, all_text = await scrape_website(url)
-        print(f"Scraped website for job {job_id}")
-        
-        if soup is None:
-            print(f"Failed to scrape website for job {job_id}.")
+        try:
+            # Scrape website
+            soup, all_text = await scrape_website(url)
+            print(f"Scraped website for job {job_id}")
+            
+            if soup is None:
+                print(f"Failed to scrape website for job {job_id}.")
+                job_ref.update({
+                    "status": AnalysisStatusConstants.FAILED,
+                    "error": "Failed to scrape website. Please try again later.",
+                    "completed_at": datetime.now().isoformat()
+                })
+                return None, None, None
+                
+        except Exception as e:
+            error_message = str(e)
+            user_friendly_error = ""
+            
+            print(f"Error scraping website for job {job_id}: {error_message}")
+            
+            # Provide specific error messages based on the type of error
+            if "403" in error_message or "Access forbidden" in error_message:
+                user_friendly_error = (
+                    "The website is blocking automated access. This is common with large e-commerce sites "
+                    "that have strict bot protection. Please try again later, or contact support if this "
+                    "issue persists with your website."
+                )
+            elif "404" in error_message or "Page not found" in error_message:
+                user_friendly_error = (
+                    "The website could not be found. Please check that the URL is correct and the website "
+                    "is accessible."
+                )
+            elif "429" in error_message or "Rate limited" in error_message:
+                user_friendly_error = (
+                    "The website is rate limiting requests. Please wait a few minutes and try again."
+                )
+            elif "timeout" in error_message.lower() or "took too long" in error_message:
+                user_friendly_error = (
+                    "The website took too long to respond. This might be due to server issues or slow "
+                    "internet connection. Please try again in a few minutes."
+                )
+            elif "SSL" in error_message or "certificate" in error_message:
+                user_friendly_error = (
+                    "There's an SSL certificate issue with the website. This might be a temporary problem "
+                    "with the website's security configuration. Please try again later."
+                )
+            elif "Failed to connect" in error_message or "connection" in error_message.lower():
+                user_friendly_error = (
+                    "Unable to connect to the website. Please check that the URL is correct and the website "
+                    "is online and accessible."
+                )
+            elif "nodename nor servname provided" in error_message:
+                user_friendly_error = (
+                    "The website address could not be resolved. Please check that the URL is correct and "
+                    "the website exists."
+                )
+            else:
+                user_friendly_error = (
+                    "An unexpected error occurred while trying to access the website. Please check that "
+                    "the URL is correct and try again. If the problem persists, contact support."
+                )
+            
             job_ref.update({
                 "status": AnalysisStatusConstants.FAILED,
-                "error": "Failed to scrape website. Please try again later.",
+                "error": user_friendly_error,
+                "error_details": error_message,  # Keep technical details for debugging
                 "completed_at": datetime.now().isoformat()
             })
             return None, None, None
         
-        # Extract company facts
-        company_facts = await scrape_company_facts(url, soup, all_text)
-        print(f"Company facts for job {job_id}: {company_facts}")
-        
-        if company_facts["name"] == "":
-            print(f"No information found for website in job {job_id}.")
+        try:
+            # Extract company facts
+            company_facts = await scrape_company_facts(url, soup, all_text)
+            print(f"Company facts for job {job_id}: {company_facts}")
+            
+            if company_facts["name"] == "":
+                print(f"No information found for website in job {job_id}.")
+                job_ref.update({
+                    "status": AnalysisStatusConstants.FAILED,
+                    "error": "No information found about your website. You need to add name tags, meta tags, and other basic structured data to your website to run this analysis.",
+                    "completed_at": datetime.now().isoformat()
+                })
+                return None, None, None
+            
+        except Exception as e:
+            print(f"Error extracting company facts for job {job_id}: {str(e)}")
             job_ref.update({
                 "status": AnalysisStatusConstants.FAILED,
-                "error": "No information found about your website. You need to add name tags, meta tags, and other basic structured data to your website to run this analysis.",
+                "error": "Failed to extract information from the website. The website might be missing important metadata or have an unusual structure.",
+                "error_details": str(e),
                 "completed_at": datetime.now().isoformat()
             })
             return None, None, None
@@ -291,12 +359,18 @@ class AnalysisService:
         if job_data.get("user_id") != user_id:
             return {"status": AnalysisStatusConstants.FORBIDDEN}
         
-        return {
+        response = {
             "job_id": job_id,
             "error": job_data.get("error", None),
             "status": job_data.get("status"),
             "progress": job_data.get("progress", 0)
         }
+        
+        # Include error details if available (for debugging/logging)
+        if job_data.get("error_details"):
+            response["error_details"] = job_data.get("error_details")
+        
+        return response
     
     @staticmethod
     async def get_job_report(job_id: str, user_id: str) -> Dict[str, Any]:
