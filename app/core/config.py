@@ -2,13 +2,15 @@ import os
 from pydantic_settings import BaseSettings
 from dotenv import load_dotenv
 from typing import Literal
+from datetime import datetime
 
 load_dotenv()
 
 class Settings(BaseSettings):
     API_V1_STR: str = "/api/v1"
     PROJECT_NAME: str = "AEOChecker API"
-    APP_ENV: Literal["development", "production"] = os.getenv("APP_ENV", "development") # type: ignore
+    APP_ENV: Literal["development", "production"] = os.getenv("APP_ENV", "development")
+    BACKEND_LAST_BREAKING_CHANGE_DATE: str = os.getenv("BACKEND_LAST_BREAKING_CHANGE_DATE", datetime(2025, 7, 4, 10, 0, 0).isoformat())
     
     # CORS
     CORS_ORIGINS: list = [

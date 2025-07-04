@@ -29,10 +29,6 @@ def create_application() -> FastAPI:
     async def root():
         return {"message": f"Welcome to {settings.PROJECT_NAME}!"}
 
-    @application.get("/health")
-    async def health_check():
-        return {"status": "ok"}
-
     return application
 
 app = create_application()
