@@ -10,7 +10,7 @@ import ast
 from app.services.analysis.utils.llm_utils import query_openai, query_anthropic, query_gemini, query_perplexity
 from collections import Counter
 import re
-from app.schemas.analysis import CompetitorLandscapeAnalysisResult, CompetitorEntry
+from app.schemas.analysis import CompetitorLandscapeAnalysisResult, LLMCompetitorResult
 
 class CompetitorLandscapeAnalyzer(BaseAnalyzer):
     """Analyzer for evaluating competitive landscape of a company."""
@@ -29,18 +29,18 @@ class CompetitorLandscapeAnalyzer(BaseAnalyzer):
 
         if industry and products_string:
             prompt = (
-                f"List the top 3 companies in the {industry} industry for {products_string}. "
-                "Return only a Python list of company names, e.g., ['Company1', 'Company2', 'Company3']. Only return the list, no other text."
+                f"List the top 5 companies in the {industry} industry for {products_string}. "
+                "Return only a Python array of company names, e.g., ['Company1', 'Company2', 'Company3', 'Company4', 'Company5']. Only return the list, no other text. Do not provide any reasononing for your choices, do not provide any thought process, ONLY provide the array"
             )
         elif industry and not products_string: 
             prompt = (
-                f"List the top 3 companies in the {industry} industry. "
-                "Return only a Python list of company names, e.g., ['Company1', 'Company2', 'Company3']. Only return the list, no other text."
+                f"List the top 5 companies in the {industry} industry. "
+                "Return only a Python array of company names, e.g., ['Company1', 'Company2', 'Company3', 'Company4', 'Company5']. Only return the list, no other text. Do not provide any reasononing for your choices, do not provide any thought process, ONLY provide the array"
             )
         elif not industry and products_string: 
             prompt = (
-                f"List the top 3 companies in the {products_string} product. "
-                "Return only a Python list of company names, e.g., ['Company1', 'Company2', 'Company3']. Only return the list, no other text."
+                f"List the top 5 companies in the {products_string} product. "
+                "Return only a Python array of company names, e.g., ['Company1', 'Company2', 'Company3', 'Company4', 'Company5']. Only return the list, no other text. Do not provide any reasononing for your choices, do not provide any thought process, ONLY provide the array"
             )
         else: 
             print("No industry or product found/provided, skipping competitor analysis")
@@ -92,9 +92,36 @@ class CompetitorLandscapeAnalyzer(BaseAnalyzer):
             try:
                 competitors = ast.literal_eval(response.strip())
                 if isinstance(competitors, list):
-                    return [comp.strip() for comp in competitors if isinstance(comp, str)]
+                    # Post-process to handle malformed entries even in clean lists
+                    cleaned_competitors = []
+                    for comp in competitors:
+                        if isinstance(comp, str):
+                            # Check if this entry contains multiple companies separated by quotes
+                            if "', '" in comp or '", "' in comp:
+                                # Split on quote-comma-quote patterns and clean each part
+                                parts = re.split(r"['\"]\s*,\s*['\"]", comp)
+                                for part in parts:
+                                    clean_part = part.strip().strip('\'"')
+                                    if clean_part:
+                                        cleaned_competitors.append(clean_part)
+                            else:
+                                cleaned_competitors.append(comp.strip())
+                    return cleaned_competitors
             except (SyntaxError, ValueError):
                 pass
+            
+            # Look for backtick-enclosed lists first (common in Gemini markdown outputs)
+            backtick_pattern = r'```(?:python)?\s*(\[.*?\])\s*```'
+            matches = re.search(backtick_pattern, response, re.DOTALL)
+            if matches:
+                try:
+                    # Extract the complete list structure and parse it directly
+                    list_text = matches.group(1).strip()
+                    competitors = ast.literal_eval(list_text)
+                    if isinstance(competitors, list):
+                        return [comp.strip() for comp in competitors if isinstance(comp, str)]
+                except (SyntaxError, ValueError):
+                    pass
             
             # Then try to find any list-like structure with regex
             list_pattern = r'\[[\'\"](.+?)[\'\"],\s*[\'\"](.+?)[\'\"],\s*[\'\"](.+?)[\'\"]\]'
@@ -111,34 +138,36 @@ class CompetitorLandscapeAnalyzer(BaseAnalyzer):
                     items_text = '[' + matches.group(1) + ']'
                     competitors = ast.literal_eval(items_text)
                     if isinstance(competitors, list):
-                        return [comp.strip() for comp in competitors if isinstance(comp, str)]
+                        # Post-process to handle malformed entries
+                        cleaned_competitors = []
+                        for comp in competitors:
+                            if isinstance(comp, str):
+                                # If a competitor contains quotes and commas, try to split it
+                                if "', '" in comp or '", "' in comp:
+                                    # Split on quote-comma-quote patterns
+                                    split_comps = re.split(r"['\"],\s*['\"]", comp)
+                                    for split_comp in split_comps:
+                                        # Clean up any remaining quotes
+                                        clean_comp = split_comp.strip().strip('\'"')
+                                        if clean_comp:
+                                            cleaned_competitors.append(clean_comp)
+                                else:
+                                    cleaned_competitors.append(comp.strip())
+                        return cleaned_competitors
                 except (SyntaxError, ValueError):
                     pass
-            
-            # Finally look for backtick-enclosed lists (common in markdown outputs)
-            backtick_pattern = r'```(?:python)?\s*\[(.*?)\]\s*```'
-            matches = re.search(backtick_pattern, response, re.DOTALL)
-            if matches:
-                try:
-                    items_text = '[' + matches.group(1) + ']'
-                    competitors = ast.literal_eval(items_text)
-                    if isinstance(competitors, list):
-                        return [comp.strip() for comp in competitors if isinstance(comp, str)]
-                except (SyntaxError, ValueError):
-                    pass
+                    
+            # If all else fails, try to extract company names from comma-separated text
+            # Look for patterns like: Company1, Company2, Company3
+            comma_pattern = r'([A-Z][^,]+(?:\([^)]+\))?)'
+            matches = re.findall(comma_pattern, response)
+            if matches and len(matches) >= 3:
+                return [match.strip() for match in matches[:5]]  # Limit to top 5
+                
         except Exception as e:
             print(f"Error parsing competitor response: {str(e)}")
         
         return []
-
-    def _extract_all_competitors(self, llm_responses: dict) -> list:
-        """Extract and parse all competitor lists from LLM responses."""
-        competitors_lists = []
-        for model, response in llm_responses.items():
-            parsed_list = self._parse_competitor_list(response)
-            if parsed_list:
-                competitors_lists.append(parsed_list)
-        return competitors_lists
 
     def _normalize_company_name(self, name: str) -> str:
         """
@@ -242,74 +271,93 @@ class CompetitorLandscapeAnalyzer(BaseAnalyzer):
         
         return ranked_competitors
 
-    def _calculate_score(self, competitor_counter: Counter, company_name: str) -> tuple:
-        """Calculate score based on whether company is included in competitor lists."""
+    def _calculate_score(self, competitors_list: list, company_name: str) -> tuple:
+        """Calculate score based on company's position in the competitor list."""
         score = 0
         included = False
         normalized_company_name = company_name.lower()
 
-        # Find the company in the counter, considering case-insensitivity for keys
-        company_count = 0
-        found_company_key = None
-        for key, count in competitor_counter.items():
-            if key.lower() == normalized_company_name:
-                company_count = count
-                found_company_key = key # Keep the original casing for potential use
+        # Find the company in the list and get its position
+        for position, competitor in enumerate(competitors_list):
+            if competitor.lower() == normalized_company_name or normalized_company_name in competitor.lower():
                 included = True
+                # Position-based scoring (0-indexed, so add 1 for actual position)
+                actual_position = position + 1
+                if actual_position == 1:
+                    score = 25
+                elif actual_position == 2:
+                    score = 20
+                elif actual_position == 3:
+                    score = 15
+                elif actual_position == 4:
+                    score = 10
+                elif actual_position == 5:
+                    score = 5
+                else:
+                    score = 2  # Some points for being mentioned even if not in top 5
                 break
         
-        if not included:
-            return 0, False
-
-        score += 50
-
-        # Ranking score
-        if found_company_key:
-            unique_sorted_counts = sorted(list(set(competitor_counter.values())), reverse=True)
-            try:
-                rank = unique_sorted_counts.index(company_count) + 1
-            except ValueError:
-                rank = float('inf') 
-            if rank == 1:
-                score += 50
-            elif rank == 2:
-                score += 40
-            elif rank == 3:
-                score += 30
-            elif rank == 4:
-                score += 20
-            elif rank == 5:
-                score += 10
-
-        print(f"Score: {score}")
-            
         return score, included
+
+    def _analyze_single_llm_response(self, response: str, company_facts: dict) -> tuple:
+        """
+        Analyze a single LLM response for competitors.
+        Returns (score, LLMCompetitorResult) tuple.
+        """
+        # 1. Extract competitors from this response
+        parsed_competitors = self._parse_competitor_list(response)
+        
+        if not parsed_competitors:
+            # If no competitors found, return empty result
+            return 0, LLMCompetitorResult(competitors=[], included=False, score=0)
+        
+        # 2. Calculate score based on position (no need to count/rank since we preserve order)
+        company_name = company_facts.get("name", "")
+        score, included = self._calculate_score(parsed_competitors, company_name)
+
+        # Keep the original order from LLM
+        llm_result = LLMCompetitorResult(
+            competitors=parsed_competitors,
+            included=included,
+            score=score
+        )
+
+        return score, llm_result
 
     async def analyze(self, company_facts: dict) -> tuple:
         """
         Analyze the competitive landscape for a company website.
+        Now processes each LLM response individually.
         """
         # 1. Query LLMs for competitors
         llm_responses = await self._query_llms_competitors(company_facts)
 
-        # 2. Extract competitor lists from responses
-        competitors_lists = self._extract_all_competitors(llm_responses)
-        
-        # 3. Count and rank competitors
-        sorted_competitors_tuples = self._count_and_rank_competitors(competitors_lists)
-        
-        # 4. Calculate score
-        company_name = company_facts.get("name", "")
-        competitor_counter = Counter(dict(sorted_competitors_tuples))
-        score, included = self._calculate_score(competitor_counter, company_name)
+        print(llm_responses)
 
-        # Convert list of tuples to list of CompetitorEntry objects
-        sorted_competitors_objects = [CompetitorEntry(name=name, count=count) for name, count in sorted_competitors_tuples]
+        # 2. Process each LLM response individually
+        competitor_results = {}
+        total_score = 0
+        valid_responses = 0
 
-        competitors_result = CompetitorLandscapeAnalysisResult(
-            sorted_competitors=sorted_competitors_objects,
-            included=included
+        for model_name, response in llm_responses.items():
+            if isinstance(response, str) and not response.startswith("Error:") and not response.startswith("API key not configured"):
+                score, llm_result = self._analyze_single_llm_response(response, company_facts)
+                competitor_results[model_name] = llm_result
+                total_score += score  # Sum the scores instead of averaging
+                valid_responses += 1
+            else:
+                # For errors or missing API keys, set to None
+                competitor_results[model_name] = None
+
+        # Use total score (sum) instead of average
+        final_score = total_score
+
+        # Create final result with individual LLM results
+        final_result = CompetitorLandscapeAnalysisResult(
+            openai=competitor_results.get("openai"),
+            anthropic=competitor_results.get("anthropic"),
+            gemini=competitor_results.get("gemini"),
+            perplexity=competitor_results.get("perplexity")
         )
 
-        # Return top competitors as tuples of (name, count)
-        return score, competitors_result
+        return final_score, final_result

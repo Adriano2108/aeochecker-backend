@@ -20,14 +20,16 @@ class AnalysisTask(CamelCaseModel):
             return to_camel_case(v)
         return v
 
-class CompetitorEntry(CamelCaseModel):
-    name: str
-    count: int
-    
-class CompetitorLandscapeAnalysisResult(CamelCaseModel):
-    sorted_competitors: List[CompetitorEntry]
+class LLMCompetitorResult(CamelCaseModel):
+    competitors: List[str]
     included: bool
+    score: float
 
+class CompetitorLandscapeAnalysisResult(CamelCaseModel):
+    openai: Optional[LLMCompetitorResult] = None
+    anthropic: Optional[LLMCompetitorResult] = None
+    gemini: Optional[LLMCompetitorResult] = None
+    perplexity: Optional[LLMCompetitorResult] = None
 
 class SharingMetadata(CamelCaseModel):
     is_public: bool
