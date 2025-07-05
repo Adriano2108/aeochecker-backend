@@ -30,6 +30,12 @@ class Settings(BaseSettings):
     GEMINI_API_KEY: str = os.getenv("GEMINI_API_KEY", "")
     PERPLEXITY_API_KEY: str = os.getenv("PERPLEXITY_API_KEY", "")
     
+    # LLM API Configuration
+    LLM_TIMEOUT_SECONDS: int = int(os.getenv("LLM_TIMEOUT_SECONDS", "60"))
+    LLM_CONNECT_TIMEOUT_SECONDS: int = int(os.getenv("LLM_CONNECT_TIMEOUT_SECONDS", "10"))
+    LLM_MAX_RETRIES: int = int(os.getenv("LLM_MAX_RETRIES", "3"))
+    LLM_RETRY_BASE_DELAY: float = float(os.getenv("LLM_RETRY_BASE_DELAY", "1.0"))
+    
     # Production Stripe Variables
     STRIPE_SECRET_KEY_PROD: str = os.getenv("STRIPE_SECRET_KEY_PROD", "")
     STRIPE_WEBHOOK_SECRET_PROD: str = os.getenv("STRIPE_WEBHOOK_SECRET_PROD", "")
