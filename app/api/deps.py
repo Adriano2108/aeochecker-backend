@@ -63,7 +63,8 @@ async def get_current_user_optional(authorization: Optional[str] = Header(defaul
 
 async def check_user_credits(user=Depends(get_current_user)):
     """
-    Check if user has sufficient credits for analysis
+    Check if user has sufficient credits for analysis or has an active subscription.
+    Users with active subscriptions (starter or developer) can proceed regardless of credits.
     """
     user_doc = db.collection("users").document(user["uid"]).get()
     
@@ -76,6 +77,13 @@ async def check_user_credits(user=Depends(get_current_user)):
     user_data = user_doc.to_dict()
     credits = user_data.get("credits", 0)
     
+    # Check if user has an active subscription
+    subscription = user_data.get("subscription")
+    if subscription and subscription.get("status") == "active" and subscription.get("type") in ["starter", "developer"]:
+        # User has active subscription, allow analysis regardless of credits
+        return {"user": user, "credits": credits, "user_data": user_data}
+    
+    # No active subscription, check credits
     if credits <= 0:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,

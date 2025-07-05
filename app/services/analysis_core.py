@@ -317,10 +317,22 @@ class AnalysisService:
         })
         print(f"Analysis completed for job {job_id}")
         
-        # Deduct credit from user
+        # Check if user has active subscription before deducting credit
         user_ref = db.collection("users").document(user_id)
-        user_ref.update({"credits": firestore.Increment(-1)})
-        print(f"Credit deducted for job {job_id}")
+        user_doc = user_ref.get()
+        
+        if user_doc.exists:
+            user_data = user_doc.to_dict()
+            subscription = user_data.get("subscription")
+            
+            # Only deduct credit if user doesn't have an active subscription
+            if not (subscription and subscription.get("status") == "active" and subscription.get("type") in ["starter", "developer"]):
+                user_ref.update({"credits": firestore.Increment(-1)})
+                print(f"Credit deducted for job {job_id}")
+            else:
+                print(f"Credit deduction skipped for job {job_id} - user has active subscription")
+        else:
+            print(f"Warning: User {user_id} not found when trying to deduct credit for job {job_id}")
         
         # Save report to user's reports collection
         report_ref = db.collection("users").document(user_id).collection("reports").document(job_id)
