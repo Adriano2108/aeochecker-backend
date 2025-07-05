@@ -61,7 +61,19 @@ class UserService:
                     
                 # Convert timestamp if needed
                 if report_data.get("created_at") and not isinstance(report_data["created_at"], datetime):
-                    report_data["created_at"] = report_data["created_at"].datetime() if hasattr(report_data["created_at"], "datetime") else datetime.now()
+                    if hasattr(report_data["created_at"], "datetime"):
+                        # Handle Firestore timestamp objects
+                        report_data["created_at"] = report_data["created_at"].datetime()
+                    elif isinstance(report_data["created_at"], str):
+                        # Handle ISO format strings
+                        try:
+                            report_data["created_at"] = datetime.fromisoformat(report_data["created_at"].replace('Z', '+00:00'))
+                        except (ValueError, AttributeError):
+                            # If parsing fails, use current time as fallback
+                            report_data["created_at"] = datetime.now()
+                    else:
+                        # Unknown format, use current time as fallback
+                        report_data["created_at"] = datetime.now()
                 
                 # Create summary
                 summary = ReportSummary(
