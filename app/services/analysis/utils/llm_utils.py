@@ -7,6 +7,11 @@ import logging
 # Configure logging
 logger = logging.getLogger(__name__)
 
+# Enable HTTPX debug logging for troubleshooting Cloud Run issues
+import httpcore
+logging.getLogger("httpx").setLevel(logging.DEBUG)
+logging.getLogger("httpcore").setLevel(logging.DEBUG)
+
 async def query_openai(prompt: str, temperature: float = 0.1):
     import openai
     client = openai.AsyncOpenAI(api_key=settings.OPENAI_API_KEY)
@@ -19,20 +24,15 @@ async def query_openai(prompt: str, temperature: float = 0.1):
     return "openai", response.output_text
 
 async def query_anthropic(prompt: str, temperature: float = 0.1) -> Tuple[str, str]:
-    from anthropic import AsyncAnthropic
+    from anthropic import AsyncAnthropic, DefaultAsyncHttpxClient
+    import httpx
     
-    # Configure client with explicit timeout and retry settings from config
-    client = AsyncAnthropic(
-        api_key=settings.ANTHROPIC_API_KEY,
-        timeout=httpx.Timeout(
-            timeout=settings.LLM_TIMEOUT_SECONDS, 
-            connect=settings.LLM_CONNECT_TIMEOUT_SECONDS
-        ),
-        max_retries=settings.LLM_MAX_RETRIES,
-        default_headers={
-            "anthropic-version": "2023-06-01",
-            "User-Agent": "AEOChecker/1.0"
-        }
+    # Configure limits and timeout for the async client
+    # Disable HTTP/2 to rule out Cloud Run + Cloudflare edge cases
+    limits = httpx.Limits(max_keepalive_connections=0, max_connections=100)  # Key fix for Cloud Run
+    timeout = httpx.Timeout(
+        timeout=settings.LLM_TIMEOUT_SECONDS, 
+        connect=settings.LLM_CONNECT_TIMEOUT_SECONDS
     )
     
     max_attempts = settings.LLM_MAX_RETRIES
@@ -40,19 +40,29 @@ async def query_anthropic(prompt: str, temperature: float = 0.1) -> Tuple[str, s
     
     for attempt in range(max_attempts):
         try:
-            response = await client.messages.create(
-                model="claude-3-5-haiku-20241022",
-                max_tokens=150,
-                system="You are a helpful assistant that provides factual information about companies. Please do not invent facts, you are allowed to say you don't know.",
-                messages=[{"role": "user", "content": prompt}],
-                temperature=temperature
-            )
-            return "anthropic", response.content[0].text
+            # Use async context manager to ensure proper cleanup
+            async with AsyncAnthropic(
+                api_key=settings.ANTHROPIC_API_KEY,
+                http_client=DefaultAsyncHttpxClient(
+                    http2=False,  # Disable HTTP/2 to rule out Cloud Run edge cases
+                    limits=limits, 
+                    timeout=timeout
+                ),
+            ) as client:
+                response = await client.messages.create(
+                    model="claude-3-5-haiku-20241022",
+                    max_tokens=150,
+                    system="You are a helpful assistant that provides factual information about companies. Please do not invent facts, you are allowed to say you don't know.",
+                    messages=[{"role": "user", "content": prompt}],
+                    temperature=temperature
+                )
+                return "anthropic", response.content[0].text
             
         except Exception as e:
-            error_str = str(e).lower()
+            logger.exception("Anthropic call blew up — full traceback below") 
             
             # Check if it's a retryable error
+            error_str = str(e).lower()
             if any(keyword in error_str for keyword in [
                 "connection error", "timeout", "connection refused", 
                 "connection aborted", "connection reset", "network",
