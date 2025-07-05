@@ -30,34 +30,59 @@ class UserService:
         return user_data
     
     @staticmethod
-    async def get_user_reports(user_id: str, limit: int = 10) -> List[ReportSummary]:
+    async def get_user_reports(user_id: str, limit: int = 10, offset: int = 0) -> List[ReportSummary]:
         """
-        Retrieve user's analysis reports (excluding deleted reports)
+        Retrieve user's analysis reports with pagination (excluding deleted reports)
         """
         reports_ref = db.collection("users").document(user_id).collection("reports")
-        reports = reports_ref.order_by("created_at", direction="DESCENDING").limit(limit * 2).stream()  # Get more to account for deleted ones
         
+        # For pagination with deleted reports, we need to fetch more records than requested
+        # since some may be deleted. We'll use a batch approach to ensure we get enough results.
         result = []
-        for report in reports:
-            report_data = report.to_dict()
+        batch_size = max(limit * 2, 20)  # Fetch extra to account for deleted reports
+        current_offset = offset
+        
+        while len(result) < limit:
+            # Fetch a batch of reports
+            reports_query = reports_ref.order_by("created_at", direction="DESCENDING").offset(current_offset).limit(batch_size)
+            reports = list(reports_query.stream())
             
-            if report_data.get("deleted", False):
-                continue
+            # If no more reports, break
+            if not reports:
+                break
+            
+            # Process this batch
+            for report in reports:
+                report_data = report.to_dict()
                 
-            if report_data.get("created_at") and not isinstance(report_data["created_at"], datetime):
-                report_data["created_at"] = report_data["created_at"].datetime() if hasattr(report_data["created_at"], "datetime") else datetime.now()
+                # Skip deleted reports
+                if report_data.get("deleted", False):
+                    continue
+                    
+                # Convert timestamp if needed
+                if report_data.get("created_at") and not isinstance(report_data["created_at"], datetime):
+                    report_data["created_at"] = report_data["created_at"].datetime() if hasattr(report_data["created_at"], "datetime") else datetime.now()
+                
+                # Create summary
+                summary = ReportSummary(
+                    url=report_data.get("url"),
+                    title=report_data.get("title"),
+                    score=report_data.get("score"),
+                    created_at=report_data.get("created_at"),
+                    analysis_synthesis=report_data.get("analysis_synthesis"),
+                    job_id=report.id
+                )
+                result.append(summary)
+                
+                # Stop if we have enough results
+                if len(result) >= limit:
+                    break
             
-            summary = ReportSummary(
-                url=report_data.get("url"),
-                title=report_data.get("title"),
-                score=report_data.get("score"),
-                created_at=report_data.get("created_at"),
-                analysis_synthesis=report_data.get("analysis_synthesis"),
-                job_id=report.id
-            )
-            result.append(summary)
-            
-            if len(result) >= limit:
+            # If we processed all reports in this batch but still don't have enough results,
+            # fetch the next batch
+            if len(result) < limit and len(reports) == batch_size:
+                current_offset += batch_size
+            else:
                 break
         
         return result

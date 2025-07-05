@@ -57,11 +57,11 @@ async def promote_user(user=Depends(get_current_user)):
     return user_data
 
 @router.get("/me/reports", response_model=List[ReportSummary])
-async def get_my_reports(limit: int = 10, user=Depends(get_current_user)):
+async def get_my_reports(limit: int = 10, offset: int = 0, user=Depends(get_current_user)):
     """
-    Get current user's analysis reports
+    Get current user's analysis reports with pagination
     """
-    reports = await UserService.get_user_reports(user["uid"], limit=limit)
+    reports = await UserService.get_user_reports(user["uid"], limit=limit, offset=offset)
     return reports
 
 @router.delete("/{uid}", status_code=status.HTTP_204_NO_CONTENT)
