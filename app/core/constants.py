@@ -8,7 +8,7 @@ from enum import Enum, auto
 class UserCredits:
     """Constants related to user credits"""
     PERSISTENT_USER = 1
-    ANONYMOUS_USER = 1
+    ANONYMOUS_USER = 0
     PREMIUM_USER = 10
 class AnalysisStatus(str, Enum):
     """Constants related to analysis status"""
