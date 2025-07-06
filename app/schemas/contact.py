@@ -31,7 +31,7 @@ class ContactMessageInDB(ContactMessageBase):
                     "uid": "abc123def456",
                     "email": "user@example.com",
                     "username": "John",
-                    "credits": 2,
+                    "credits": 1,
                     "createdAt": "2023-07-01T10:00:00.000Z",
                     "reports": ["report1", "report2"],
                     "persistent": False,
