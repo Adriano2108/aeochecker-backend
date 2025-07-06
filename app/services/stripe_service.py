@@ -12,6 +12,11 @@ PRODUCT_TO_PRICE_MAP = {
     "developer": settings.STRIPE_PRICE_ID_DEVELOPER,
 }
 
+TRIAL_PERIOD_DAYS = {
+    "starter": 3,
+    "developer": 7,
+}
+
 async def create_checkout_session(product_id: str, user_id: str, user_email: str):
     """
     Creates a Stripe Checkout Session for the given product_id.
@@ -28,6 +33,7 @@ async def create_checkout_session(product_id: str, user_id: str, user_email: str
         print(f"Failed to log checkout creation for product {product_id}: {e}")
 
     price_id = PRODUCT_TO_PRICE_MAP[product_id]
+    trial_days = TRIAL_PERIOD_DAYS[product_id]
     
     try:
         checkout_session = stripe.checkout.Session.create(
@@ -47,6 +53,7 @@ async def create_checkout_session(product_id: str, user_id: str, user_email: str
                 "plan_name": product_id
             },
             subscription_data={
+                "trial_period_days": trial_days,
                 "metadata": {
                     "user_id": user_id,
                     "plan_name": product_id

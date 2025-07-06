@@ -1,5 +1,6 @@
 from fastapi import Depends, HTTPException, status, Header
 from app.core.firebase import firebase_auth, db
+from app.services.analysis.utils.subscription_utils import has_active_subscription
 from firebase_admin.auth import InvalidIdTokenError, ExpiredIdTokenError
 from typing import Optional
 
@@ -77,10 +78,7 @@ async def check_user_credits(user=Depends(get_current_user)):
     user_data = user_doc.to_dict()
     credits = user_data.get("credits", 0)
     
-    # Check if user has an active subscription
-    subscription = user_data.get("subscription")
-    if subscription and subscription.get("status") == "active" and subscription.get("type") in ["starter", "developer"]:
-        # User has active subscription, allow analysis regardless of credits
+    if has_active_subscription(user_data):
         return {"user": user, "credits": credits, "user_data": user_data}
     
     # No active subscription, check credits

@@ -9,6 +9,7 @@ from app.core.constants import AnalysisStatus as AnalysisStatusConstants
 from app.services.analysis import AiPresenceAnalyzer, CompetitorLandscapeAnalyzer, StrategyReviewAnalyzer
 from app.services.analysis.utils.scrape_utils import scrape_website, scrape_company_facts, _validate_and_get_best_url
 from app.services.analysis.utils.response import generate_analysis_synthesis, generate_dummy_report
+from app.services.analysis.utils.subscription_utils import has_active_subscription
 from app.services.stats_service import StatsService
 from app.core.config import settings
 import asyncio
@@ -179,7 +180,7 @@ class AnalysisService:
         try:
             # Extract company facts
             company_facts = await scrape_company_facts(url, soup, all_text)
-            print(f"Company facts for job {job_id}: {company_facts}")
+            print(f"Company facts for job {job_id}: {json.dumps(company_facts, indent=4)}")
             
             if company_facts["name"] == "":
                 print(f"No information found for website in job {job_id}.")
@@ -319,10 +320,10 @@ class AnalysisService:
         
         # Check if user has active subscription before deducting credit
         user_ref = db.collection("users").document(user_id)
-        user_doc = user_ref.get()
+        user = user_ref.get()
         
-        if user_doc.exists:
-            user_data = user_doc.to_dict()
+        if user.exists:
+            user_data = user.to_dict()
             subscription = user_data.get("subscription")
             
             # Only deduct credit if user doesn't have an active subscription
@@ -429,7 +430,7 @@ class AnalysisService:
         user = user_ref.get()
         user_data = user.to_dict()
         
-        if not user_data.get("persistent", False):
+        if not has_active_subscription(user_data):
             result = generate_dummy_report(result)
         
         sharing_metadata = AnalysisService._build_sharing_metadata(job_data)
@@ -530,7 +531,7 @@ class AnalysisService:
             
             if user_doc.exists:
                 user_data = user_doc.to_dict()
-                should_show_dummy = not user_data.get("persistent", False)
+                should_show_dummy = not has_active_subscription(user_data)
         
         if should_show_dummy:
             result = generate_dummy_report(result)

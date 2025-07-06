@@ -11,6 +11,7 @@ from app.services.analysis.utils.llm_utils import query_openai, query_anthropic,
 from collections import Counter
 import re
 from app.schemas.analysis import CompetitorLandscapeAnalysisResult, LLMCompetitorResult
+import json
 
 class CompetitorLandscapeAnalyzer(BaseAnalyzer):
     """Analyzer for evaluating competitive landscape of a company."""
@@ -332,7 +333,7 @@ class CompetitorLandscapeAnalyzer(BaseAnalyzer):
         # 1. Query LLMs for competitors
         llm_responses = await self._query_llms_competitors(company_facts)
 
-        print(llm_responses)
+        print(json.dumps(llm_responses, indent=4))
 
         # 2. Process each LLM response individually
         competitor_results = {}
