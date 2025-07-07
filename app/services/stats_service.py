@@ -1,6 +1,7 @@
 from app.core.firebase import db
 from firebase_admin import firestore
 from datetime import datetime
+from app.core.config import settings
 
 class StatsService:
     @staticmethod
@@ -9,6 +10,9 @@ class StatsService:
         Increments the checkout_created_count for a given product_id in the 'stats' collection.
         """
         stats_ref = db.collection("stats").document(product_id)
+
+        if settings.APP_ENV != "production":
+            return
         
         try:
             stats_ref.update({
@@ -30,6 +34,9 @@ class StatsService:
         Increments the job_created_count in the 'stats' collection under a document named 'analysis_jobs'.
         """
         stats_ref = db.collection("stats").document("analysis_jobs")
+
+        if settings.APP_ENV != "production":
+            return
         
         try:
             stats_ref.update({
