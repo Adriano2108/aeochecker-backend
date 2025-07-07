@@ -173,16 +173,22 @@ async def handle_stripe_webhook(request: Request, stripe_signature: Optional[str
 
     elif event['type'] == 'customer.subscription.updated':
         subscription_obj = event['data']['object']
-        # Check for cancellation via 'incomplete_expired' or if status is 'canceled'
-        # Stripe might also send 'canceled' status directly if a subscription is canceled e.g. due to payment failures after retries
-        if subscription_obj.get('status') == 'incomplete_expired' or subscription_obj.get('cancel_at_period_end') is True or subscription_obj.get('status') == 'canceled':
+        status = subscription_obj.get('status')
+
+        # Case 1: The user has scheduled the subscription to cancel at the end of the period.
+        if subscription_obj.get('cancel_at_period_end') is True:
+            print(f"Subscription {subscription_obj.get('id')} is scheduled to cancel at period end.")
+            pass
+
+        # Case 2: The subscription has been officially cancelled or expired.
+        elif status in ['canceled', 'incomplete_expired']:
             metadata = subscription_obj.get('metadata', {})
             user_id = metadata.get('user_id')
             plan_name = metadata.get('plan_name')
             subscription_id = subscription_obj.get('id')
             customer_id = subscription_obj.get('customer')
 
-            print(f"Subscription {subscription_id} updated (likely cancelled/expired) for user: {user_id}, plan: {plan_name}, status: {subscription_obj.get('status')}")
+            print(f"Subscription {subscription_id} for user {user_id} of plan {plan_name} has been cancelled or expired. Status: {status}")
 
             if user_id and subscription_id and plan_name:
                 if plan_name not in ["starter", "developer"]:
@@ -203,8 +209,9 @@ async def handle_stripe_webhook(request: Request, stripe_signature: Optional[str
                     )
             else:
                 print(f"Error: Missing user_id, subscription_id, or plan_name in customer.subscription.updated for subscription {subscription_id}")
+        
         else:
-            print(f"Unhandled subscription update status for {subscription_obj.get('id')}: {subscription_obj.get('status')}")
+            print(f"Unhandled subscription update for {subscription_obj.get('id')}. Status: {status}")
         
     else:
         print(f"Unhandled event type {event['type']}")
