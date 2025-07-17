@@ -165,6 +165,26 @@ async def scrape_website(url: str, max_retries: int = 3) -> Tuple[BeautifulSoup,
                 response = await client.get(url, headers=headers)
                 response.raise_for_status()  # Raise an exception for bad status codes
                 
+                # Check for potential encoding issues as fallback
+                content_encoding = response.headers.get('content-encoding', '').lower()
+                is_brotli = 'br' in content_encoding or 'brotli' in content_encoding
+                
+                # Fallback: Check if response looks like binary data that needs manual decompression
+                if len(response.text) > 0:
+                    binary_chars = sum(1 for c in response.text[:200] if ord(c) < 32 and ord(c) not in [9, 10, 13])
+                    if binary_chars > 20:  # High ratio of control characters suggests decompression failed
+                        if is_brotli and BROTLI_AVAILABLE:
+                            try:
+                                # Manual brotli decompression as fallback
+                                raw_content = response.content
+                                decompressed_content = brotli.decompress(raw_content)
+                                decoded_text = decompressed_content.decode('utf-8', errors='ignore')
+                                response._text = decoded_text
+                            except Exception:
+                                pass  # Continue with original response if decompression fails
+                        elif is_brotli and not BROTLI_AVAILABLE:
+                            print(f"Warning: Brotli compression detected but brotli module not available. Install with: pip install brotli")
+                
                 soup = BeautifulSoup(response.text, "html.parser")
 
                 # Handle meta-refresh redirects
