@@ -307,7 +307,13 @@ class AnalysisService:
             "created_at": datetime.now().isoformat(),
             "job_id": job_id,
             "dummy": False,
-            "deleted": False
+            "deleted": False,
+            "company_info": {
+                "name": company_facts.get('name', ''),
+                "industry": company_facts.get('industry', ''),
+                "key_products_services": company_facts.get('key_products_services', []),
+                "description": company_facts.get('description', '')
+            }
         }
 
         # Update job status to completed

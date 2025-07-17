@@ -38,6 +38,12 @@ class SharingMetadata(CamelCaseModel):
     view_count: int = 0
     share_url: Optional[str] = None
 
+class CompanyInfo(CamelCaseModel):
+    name: str
+    industry: str
+    key_products_services: List[str]
+    description: str
+
 class AnalysisResult(CamelCaseModel):
     url: HttpUrl
     score: float
@@ -48,16 +54,23 @@ class AnalysisResult(CamelCaseModel):
     analysis_items: List[AnalysisTask]
     created_at: datetime
     sharing: Optional[SharingMetadata] = None  # Only present for owners
+    company_info: Optional[CompanyInfo] = None
     
     class Config:
         json_schema_extra = {
             "example": {
                 "url": "https://example.com",
                 "score": 85.5,
-                "title": "Analysis Title",
+                "title": "Company Name",
                 "dummy": False,
                 "analysis_synthesis": "This is an example of the analysis synthesis",
                 "deleted": False,
+                "company_info": {
+                    "name": "Company Name",
+                    "industry": "Technology",
+                    "key_products_services": ["Web Development", "Software Solutions"],
+                    "description": "A technology company providing web development services"
+                },
                 "analysis_items": [
                     {"id": "task1", "title": "SEO Analysis", "result": "Good SEO practices found", "completed": True},
                     {"id": "task2", "title": "Performance Check", "result": "Site loads quickly", "completed": True},
