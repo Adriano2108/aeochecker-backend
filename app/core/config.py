@@ -10,7 +10,7 @@ class Settings(BaseSettings):
     API_V1_STR: str = "/api/v1"
     PROJECT_NAME: str = "AEOChecker API"
     APP_ENV: Literal["development", "production"] = os.getenv("APP_ENV", "development")
-    BACKEND_LAST_BREAKING_CHANGE_DATE: str = os.getenv("BACKEND_LAST_BREAKING_CHANGE_DATE", datetime(2025, 7, 4, 10, 0, 0).isoformat())
+    BACKEND_LAST_BREAKING_CHANGE_DATE: str = os.getenv("BACKEND_LAST_BREAKING_CHANGE_DATE", datetime(2025, 7, 17, 10, 0, 0).isoformat())
     
     # CORS
     CORS_ORIGINS: list = [
