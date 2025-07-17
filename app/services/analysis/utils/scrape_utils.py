@@ -14,6 +14,7 @@ from urllib.parse import urljoin, urlparse, urlunparse
 from app.services.analysis.utils.llm_utils import query_openai
 import gzip
 import io
+from bs4 import Comment
 
 # Add brotli import for decompression
 try:
@@ -109,7 +110,7 @@ async def scrape_website_conservative(url: str) -> Tuple[BeautifulSoup, str]:
             response.raise_for_status()
             
             soup = BeautifulSoup(response.text, "html.parser")
-            all_text = soup.get_text(separator=' ', strip=True)
+            all_text = _extract_clean_text(soup)
             
             return soup, all_text
             
@@ -201,8 +202,8 @@ async def scrape_website(url: str, max_retries: int = 3) -> Tuple[BeautifulSoup,
                     soup = BeautifulSoup(response.text, "html.parser")
                     tried_alternative = True
                 
-                # Extract all text content for analysis
-                all_text = soup.get_text(separator=' ', strip=True)
+                # Extract clean text content for analysis
+                all_text = _extract_clean_text(soup)
                 
                 # Success! Return the results
                 return soup, all_text
@@ -262,6 +263,71 @@ async def scrape_website(url: str, max_retries: int = 3) -> Tuple[BeautifulSoup,
         raise last_exception
     else:
         raise Exception(f"Failed to scrape {url} after {max_retries} attempts")
+
+def _extract_clean_text(soup: BeautifulSoup) -> str:
+    """
+    Extract clean, readable text from BeautifulSoup object.
+    Filters out binary content, scripts, and non-printable characters.
+    """
+    # Remove problematic elements that often contain binary/encoded content
+    for element in soup(['script', 'style', 'noscript', 'meta', 'link', 'head']):
+        element.decompose()
+    
+    # Remove HTML comments
+    comments = soup.find_all(string=lambda text: isinstance(text, Comment))
+    for comment in comments:
+        comment.extract()
+    
+    # Remove elements with data URIs (often contain base64 encoded binary data)
+    for element in soup.find_all(attrs={'src': re.compile(r'^data:', re.I)}):
+        element.decompose()
+    for element in soup.find_all(attrs={'href': re.compile(r'^data:', re.I)}):
+        element.decompose()
+    
+    # Extract text from remaining elements
+    all_text = soup.get_text(separator=' ', strip=True)
+    
+    # More robust character filtering
+    # Remove control characters and other problematic characters, but keep Unicode letters/digits
+    # This pattern removes characters below space (0x20) except tabs and newlines which we'll convert to spaces
+    clean_text = re.sub(r'[\x00-\x08\x0B\x0C\x0E-\x1F\x7F-\x9F]', '', all_text)
+    
+    # Replace any remaining tabs and newlines with spaces
+    clean_text = re.sub(r'[\t\n\r]', ' ', clean_text)
+    
+    # Remove excessive whitespace
+    clean_text = re.sub(r'\s+', ' ', clean_text).strip()
+    
+    # Additional check: if we still have a high ratio of suspicious characters, 
+    # fall back to extracting only from content elements
+    if len(clean_text) > 100:
+        # Count characters that are clearly problematic (non-printable and not normal Unicode)
+        suspicious_chars = sum(1 for c in clean_text if not c.isprintable() and ord(c) not in [9, 10, 13])  # Exclude tab, newline, carriage return
+        
+        # If more than 5% of characters are suspicious, extract from specific elements only
+        if suspicious_chars / len(clean_text) > 0.05:
+            print(f"[DEBUG] High ratio of suspicious characters ({suspicious_chars}/{len(clean_text)}),"
+                 + " falling back to content-only extraction")
+            
+            # Try to extract only from common content elements
+            content_elements = soup.find_all(['p', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'li', 'td', 'th', 'div', 'span', 'article', 'section', 'main', 'nav', 'footer', 'header'])
+            if content_elements:
+                content_texts = []
+                for element in content_elements:
+                    element_text = element.get_text(strip=True)
+                    # Apply same cleaning to element text
+                    element_text = re.sub(r'[\x00-\x08\x0B\x0C\x0E-\x1F\x7F-\x9F]', '', element_text)
+                    element_text = re.sub(r'[\t\n\r]', ' ', element_text)
+                    element_text = re.sub(r'\s+', ' ', element_text).strip()
+                    
+                    # Only include meaningful text chunks
+                    if element_text and len(element_text) > 3:
+                        content_texts.append(element_text)
+                
+                if content_texts:
+                    clean_text = ' '.join(content_texts)
+    
+    return clean_text
 
 def _extract_industry_and_products(soup: BeautifulSoup, all_text: str) -> Dict[str, Any]:
     """
