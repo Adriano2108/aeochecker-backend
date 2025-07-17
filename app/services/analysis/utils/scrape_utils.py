@@ -497,6 +497,50 @@ def extract_company_name(soup: BeautifulSoup, url: str) -> str:
         The most likely company name
     """
     
+    def _is_valid_company_name(name: str) -> bool:
+        """
+        Check if a name is a valid company name by filtering out common UI elements and invalid terms.
+        """
+        if not name or len(name.strip()) < 2:
+            return False
+            
+        name_lower = name.lower().strip()
+        
+        # Common UI elements and invalid terms that should not be company names
+        invalid_terms = {
+            'close', 'menu', 'home', 'back', 'next', 'prev', 'previous', 'submit', 'login', 
+            'logout', 'sign in', 'sign up', 'register', 'search', 'go', 'click', 'here',
+            'more', 'less', 'show', 'hide', 'open', 'save', 'cancel', 'ok', 'yes', 'no',
+            'loading', 'error', 'success', 'warning', 'info', 'help', 'about', 'contact',
+            'privacy', 'terms', 'policy', 'cookies', 'accept', 'decline', 'continue',
+            'skip', 'done', 'finish', 'start', 'begin', 'end', 'stop', 'pause', 'play',
+            'page', 'website', 'site', 'web', 'www', 'http', 'https', 'com', 'net', 'org',
+            'welcome', 'hello', 'hi', 'goodbye', 'bye', 'thanks', 'thank you',
+            'new', 'old', 'latest', 'recent', 'popular', 'top', 'best', 'first', 'last',
+            'main', 'primary', 'secondary', 'sidebar', 'header', 'footer', 'navigation',
+            'nav', 'breadcrumb', 'toggle', 'dropdown', 'modal', 'popup', 'overlay',
+            'tab', 'tabs', 'panel', 'section', 'content', 'text', 'image', 'video',
+            'link', 'button', 'form', 'input', 'select', 'option', 'checkbox', 'radio'
+        }
+        
+        # Check if the name is in the invalid terms list
+        if name_lower in invalid_terms:
+            return False
+            
+        # Check for very generic patterns
+        if name_lower.startswith('welcome to '):
+            return False
+            
+        # Must contain at least one letter
+        if not any(c.isalpha() for c in name):
+            return False
+            
+        # Very short single words that are likely not company names
+        if len(name_lower.split()) == 1 and len(name_lower) <= 3:
+            return False
+            
+        return True
+    
     def _remove_domain_extension(name: str) -> str:
         """
         Remove common domain extensions from a company name.
@@ -543,10 +587,12 @@ def extract_company_name(soup: BeautifulSoup, url: str) -> str:
             # Clean up Twitter handle format
             if content.startswith("@"):
                 content = content[1:]
-            if content and len(content.split()) <= 3:  # Site names should be short
+            if content and len(content.split()) <= 3 and _is_valid_company_name(content):  # Site names should be short and valid
                 print(f"[DEBUG] Found high-priority name: '{content}' from {attrs}")
                 potential_names.append(content)
                 high_priority_names.append(content)
+            elif content and len(content.split()) <= 3:
+                print(f"[DEBUG] Filtered out invalid high-priority name: '{content}' from {attrs}")
     
     print(f"[DEBUG] High-priority names found: {high_priority_names}")
     
@@ -567,15 +613,20 @@ def extract_company_name(soup: BeautifulSoup, url: str) -> str:
                 
                 print(f"[DEBUG] Title parts - Left: '{left_part}', Right: '{right_part}'")
                 
-                # Add both parts if they're 3 words or less
-                if left_part and len(left_part.split()) <= 3:
+                # Add both parts if they're 3 words or less and valid
+                if left_part and len(left_part.split()) <= 3 and _is_valid_company_name(left_part):
                     print(f"[DEBUG] Adding left part from title: '{left_part}'")
                     potential_names.append(left_part)
                     title_based_names.append(left_part)
-                if right_part and len(right_part.split()) <= 3:
+                elif left_part and len(left_part.split()) <= 3:
+                    print(f"[DEBUG] Filtered out invalid left part from title: '{left_part}'")
+                    
+                if right_part and len(right_part.split()) <= 3 and _is_valid_company_name(right_part):
                     print(f"[DEBUG] Adding right part from title: '{right_part}'")
                     potential_names.append(right_part)
                     title_based_names.append(right_part)
+                elif right_part and len(right_part.split()) <= 3:
+                    print(f"[DEBUG] Filtered out invalid right part from title: '{right_part}'")
                 
                 found_separator = True
                 break
@@ -583,10 +634,12 @@ def extract_company_name(soup: BeautifulSoup, url: str) -> str:
         if not found_separator:
             word_count = len(title_text.split())
             print(f"[DEBUG] No separator found in title, word count: {word_count}")
-            if word_count <= 3:
+            if word_count <= 3 and _is_valid_company_name(title_text):
                 print(f"[DEBUG] Adding whole title: '{title_text}'")
                 potential_names.append(title_text)
                 title_based_names.append(title_text)
+            elif word_count <= 3:
+                print(f"[DEBUG] Filtered out invalid whole title: '{title_text}'")
     
     # 3. Check og:title (MEDIUM-HIGH PRIORITY)
     print(f"[DEBUG] Checking og:title...")
@@ -605,15 +658,20 @@ def extract_company_name(soup: BeautifulSoup, url: str) -> str:
                 
                 print(f"[DEBUG] OG title parts - Left: '{left_part}', Right: '{right_part}'")
                 
-                # Add both parts if they're 3 words or less
-                if left_part and len(left_part.split()) <= 3:
+                # Add both parts if they're 3 words or less and valid
+                if left_part and len(left_part.split()) <= 3 and _is_valid_company_name(left_part):
                     print(f"[DEBUG] Adding left part from og:title: '{left_part}'")
                     potential_names.append(left_part)
                     title_based_names.append(left_part)
-                if right_part and len(right_part.split()) <= 3:
+                elif left_part and len(left_part.split()) <= 3:
+                    print(f"[DEBUG] Filtered out invalid left part from og:title: '{left_part}'")
+                    
+                if right_part and len(right_part.split()) <= 3 and _is_valid_company_name(right_part):
                     print(f"[DEBUG] Adding right part from og:title: '{right_part}'")
                     potential_names.append(right_part)
                     title_based_names.append(right_part)
+                elif right_part and len(right_part.split()) <= 3:
+                    print(f"[DEBUG] Filtered out invalid right part from og:title: '{right_part}'")
                 
                 found_separator = True
                 break
@@ -621,10 +679,12 @@ def extract_company_name(soup: BeautifulSoup, url: str) -> str:
         if not found_separator:
             word_count = len(title_text.split())
             print(f"[DEBUG] No separator found in og:title, word count: {word_count}")
-            if word_count <= 3:
+            if word_count <= 3 and _is_valid_company_name(title_text):
                 print(f"[DEBUG] Adding whole og:title: '{title_text}'")
                 potential_names.append(title_text)
                 title_based_names.append(title_text)
+            elif word_count <= 3:
+                print(f"[DEBUG] Filtered out invalid whole og:title: '{title_text}'")
     
     print(f"[DEBUG] Title-based names found: {title_based_names}")
     
