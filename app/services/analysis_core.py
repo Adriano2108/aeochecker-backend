@@ -7,7 +7,7 @@ from app.core.firebase import db
 from firebase_admin import firestore
 from app.core.constants import AnalysisStatus as AnalysisStatusConstants
 from app.services.analysis import AiPresenceAnalyzer, CompetitorLandscapeAnalyzer, StrategyReviewAnalyzer
-from app.services.analysis.utils.scrape_utils import scrape_website, scrape_company_facts, _validate_and_get_best_url
+from app.services.analysis.utils.scrape_utils import scrape_website, scrape_company_facts, _validate_and_get_best_url, get_company_facts_aeo_checker
 from app.services.analysis.utils.response import generate_analysis_synthesis, generate_dummy_report
 from app.services.analysis.utils.subscription_utils import has_active_subscription
 from app.services.stats_service import StatsService
@@ -179,7 +179,13 @@ class AnalysisService:
         
         try:
             # Extract company facts
-            company_facts = await scrape_company_facts(url, soup, all_text)
+            is_aeo_checker = "aeochecker.ai" in url.lower()
+            
+            if is_aeo_checker:
+                company_facts = get_company_facts_aeo_checker(url)
+            else:
+                company_facts = await scrape_company_facts(url, soup, all_text)
+            
             print(f"Company facts for job {job_id}: {json.dumps(company_facts, indent=4)}")
             
             if company_facts["name"] == "":

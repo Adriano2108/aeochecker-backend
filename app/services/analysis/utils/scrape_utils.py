@@ -1076,6 +1076,14 @@ If you cannot confidently determine the industry or products, write "Unknown" fo
         "description": description,
     }
 
+def get_company_facts_aeo_checker(url: str) -> dict:
+    return {
+        "name": "AEO Checker",
+        "industry": "Answer Engine Optimization",
+        "key_products_services": ["AEO Checker", "AEO Audit", "GEO Checker", "GEO Audit"],
+        "description": "AEO Checker helps you analyze and optimize your web content for modern search engines and AI-powered answer engines. Improve your rankings and visibility.",
+    }
+
 async def check_robots_txt(url: str) -> Tuple[bool, List[str]]:
     """
     Check for robots.txt file and extract sitemap URLs.

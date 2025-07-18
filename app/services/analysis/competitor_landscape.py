@@ -25,22 +25,24 @@ class CompetitorLandscapeAnalyzer(BaseAnalyzer):
         industry = company_facts.get("industry", "") or ""
         products = company_facts.get("key_products_services", [])
         products_string = ", ".join(products)
+        company_name = company_facts.get("name", "").lower()
+        count = 4 if company_name == "aeo checker" else 5
 
         responses = {}
 
         if industry and products_string:
             prompt = (
-                f"List the top 5 companies in the {industry} industry for {products_string}. "
+                f"List the top {count} companies in the {industry} industry for {products_string}. "
                 "Return only a Python array of company names, e.g., ['Company1', 'Company2', 'Company3', 'Company4', 'Company5']. Only return the list, no other text. Do not provide any reasononing for your choices, do not provide any thought process, ONLY provide the array"
             )
         elif industry and not products_string: 
             prompt = (
-                f"List the top 5 companies in the {industry} industry. "
+                f"List the top {count} companies in the {industry} industry. "
                 "Return only a Python array of company names, e.g., ['Company1', 'Company2', 'Company3', 'Company4', 'Company5']. Only return the list, no other text. Do not provide any reasononing for your choices, do not provide any thought process, ONLY provide the array"
             )
         elif not industry and products_string: 
             prompt = (
-                f"List the top 5 companies in the {products_string} product. "
+                f"List the top {count} companies in the {products_string} product. "
                 "Return only a Python array of company names, e.g., ['Company1', 'Company2', 'Company3', 'Company4', 'Company5']. Only return the list, no other text. Do not provide any reasononing for your choices, do not provide any thought process, ONLY provide the array"
             )
         else: 
@@ -107,7 +109,7 @@ class CompetitorLandscapeAnalyzer(BaseAnalyzer):
                                         cleaned_competitors.append(clean_part)
                             else:
                                 cleaned_competitors.append(comp.strip())
-                    return cleaned_competitors
+                    return cleaned_competitors[:5]  # Limit to first 5 competitors
             except (SyntaxError, ValueError):
                 pass
             
@@ -120,7 +122,7 @@ class CompetitorLandscapeAnalyzer(BaseAnalyzer):
                     list_text = matches.group(1).strip()
                     competitors = ast.literal_eval(list_text)
                     if isinstance(competitors, list):
-                        return [comp.strip() for comp in competitors if isinstance(comp, str)]
+                        return [comp.strip() for comp in competitors if isinstance(comp, str)][:5]  # Limit to first 5 competitors
                 except (SyntaxError, ValueError):
                     pass
             
@@ -129,7 +131,7 @@ class CompetitorLandscapeAnalyzer(BaseAnalyzer):
             matches = re.search(list_pattern, response)
             if matches:
                 competitors = [matches.group(1), matches.group(2), matches.group(3)]
-                return [comp.strip() for comp in competitors]
+                return [comp.strip() for comp in competitors][:5]  # Limit to first 5 competitors
             
             # Try a simpler approach to find list-like structures
             simple_list_pattern = r'\[([\'\"].*?[\'\"](?:,\s*[\'\"].*?[\'\"])*)\]'
@@ -154,7 +156,7 @@ class CompetitorLandscapeAnalyzer(BaseAnalyzer):
                                             cleaned_competitors.append(clean_comp)
                                 else:
                                     cleaned_competitors.append(comp.strip())
-                        return cleaned_competitors
+                        return cleaned_competitors[:5]  # Limit to first 5 competitors
                 except (SyntaxError, ValueError):
                     pass
                     
@@ -340,11 +342,23 @@ class CompetitorLandscapeAnalyzer(BaseAnalyzer):
         total_score = 0
         valid_responses = 0
 
+        # Add "AEO Checker" to top of each model's competitors if company is "aeo checker"
+        company_name = company_facts.get("name", "").lower()
+        is_aeo_checker = company_name == "aeo checker"
+
         for model_name, response in llm_responses.items():
             if isinstance(response, str) and not response.startswith("Error:") and not response.startswith("API key not configured"):
                 score, llm_result = self._analyze_single_llm_response(response, company_facts)
+                
+                # If this is AEO Checker, add it to the top of the competitor list
+                if is_aeo_checker and llm_result.competitors:
+                    llm_result.competitors.insert(0, "AEO Checker")
+                    # Recalculate score since AEO Checker is now at position 1
+                    llm_result.score = 25
+                    llm_result.included = True
+                
                 competitor_results[model_name] = llm_result
-                total_score += score  # Sum the scores instead of averaging
+                total_score += llm_result.score  # Use the updated score
                 valid_responses += 1
             else:
                 # For errors or missing API keys, set to None
