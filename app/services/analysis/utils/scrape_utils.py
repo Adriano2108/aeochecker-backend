@@ -16,6 +16,13 @@ import gzip
 import io
 from bs4 import Comment
 
+# Playwright imports for JavaScript-enabled scraping
+try:
+    from playwright.async_api import async_playwright
+    PLAYWRIGHT_AVAILABLE = True
+except ImportError:
+    PLAYWRIGHT_AVAILABLE = False
+
 # Add brotli import for decompression
 try:
     import brotli
@@ -284,28 +291,236 @@ async def scrape_website(url: str, max_retries: int = 3) -> Tuple[BeautifulSoup,
     else:
         raise Exception(f"Failed to scrape {url} after {max_retries} attempts")
 
+async def scrape_website_with_js(url: str, wait_time: int = 5000) -> Tuple[BeautifulSoup, str]:
+    """
+    Scrape a website using Playwright with JavaScript execution.
+    This is useful for sites that load content dynamically or serve different content to bots.
+    
+    Args:
+        url: The URL to scrape
+        wait_time: Time to wait for page load in milliseconds (default: 5000ms)
+        
+    Returns:
+        Tuple containing:
+        - soup: BeautifulSoup object of the parsed HTML
+        - all_text: Extracted text content from the website
+    """
+    if not PLAYWRIGHT_AVAILABLE:
+        raise Exception("Playwright is not available. Install with: pip install playwright && playwright install")
+    
+    print(f"Using JavaScript-enabled scraping for {url}")
+    
+    async with async_playwright() as p:
+        # Launch browser with realistic settings
+        browser = await p.chromium.launch(
+            headless=True,
+            args=[
+                '--no-sandbox',
+                '--disable-setuid-sandbox',
+                '--disable-dev-shm-usage',
+                '--disable-accelerated-2d-canvas',
+                '--no-first-run',
+                '--no-zygote',
+                '--single-process',
+                '--disable-gpu'
+            ]
+        )
+        
+        # Create context with realistic viewport and user agent
+        context = await browser.new_context(
+            viewport={'width': 1920, 'height': 1080},
+            user_agent='Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36'
+        )
+        
+        page = await context.new_page()
+        
+        try:
+            # Navigate to the page
+            await page.goto(url, wait_until='networkidle', timeout=30000)
+            
+            # Wait for additional time to let dynamic content load
+            await asyncio.sleep(wait_time / 1000)
+            
+            # Get the full HTML content after JavaScript execution
+            html_content = await page.content()
+            
+            # Parse with BeautifulSoup
+            soup = BeautifulSoup(html_content, "html.parser")
+            
+            # Extract clean text
+            all_text = _extract_clean_text(soup)
+            
+            print(f"JavaScript scraping successful. HTML length: {len(html_content)}")
+            
+            return soup, all_text
+            
+        finally:
+            await context.close()
+            await browser.close()
+
+async def scrape_website_adaptive(url: str, max_retries: int = 3) -> Tuple[BeautifulSoup, str]:
+    """
+    Adaptive scraping that tries different approaches to get complete HTML content:
+    1. Browser-like scraping (better headers) - try this first since it's most reliable
+    2. Regular scraping (fallback)
+    3. JavaScript scraping (if Playwright available)
+    
+    Args:
+        url: The URL to scrape
+        max_retries: Maximum number of retry attempts
+        
+    Returns:
+        Tuple containing:
+        - soup: BeautifulSoup object of the parsed HTML
+        - all_text: Extracted text content from the website
+    """
+    try:
+        # First, try browser-like scraping since it's most reliable for schema extraction
+        print("Trying browser-like scraping first...")
+        soup, text = await scrape_website_browser_like(url)
+        
+        # Check if we got complete content
+        has_head = soup.find('head') is not None
+        has_scripts = len(soup.find_all('script')) > 0
+        has_meta_tags = len(soup.find_all('meta')) > 0
+        
+        if has_head and (has_scripts or has_meta_tags):
+            print("Browser-like scraping got complete content!")
+            return soup, text
+        else:
+            print(f"Browser-like content incomplete (head: {has_head}, scripts: {has_scripts}, meta: {has_meta_tags})")
+            print("Trying regular scraping...")
+            
+    except Exception as browser_error:
+        print(f"Browser-like scraping failed: {browser_error}")
+        print("Trying regular scraping...")
+    
+    try:
+        # Fallback to regular scraping
+        soup, text = await scrape_website(url, max_retries)
+        
+        # Check if the content looks complete
+        has_head = soup.find('head') is not None
+        has_scripts = len(soup.find_all('script')) > 0
+        has_meta_tags = len(soup.find_all('meta')) > 0
+        
+        if has_head and (has_scripts or has_meta_tags):
+            print("Regular scraping got complete content!")
+            return soup, text
+        else:
+            print(f"Regular scraping also incomplete (head: {has_head}, scripts: {has_scripts}, meta: {has_meta_tags})")
+        
+        # Last resort: JavaScript scraping
+        if PLAYWRIGHT_AVAILABLE:
+            print("Falling back to JavaScript-enabled scraping...")
+            return await scrape_website_with_js(url)
+        else:
+            print("Warning: Playwright not available, using best available content")
+            return soup, text
+            
+    except Exception as e:
+        print(f"Regular scraping also failed: {e}")
+        
+        # Final fallback: JavaScript scraping
+        if PLAYWRIGHT_AVAILABLE:
+            print("Attempting JavaScript-enabled scraping as final fallback...")
+            return await scrape_website_with_js(url)
+        else:
+            raise Exception(f"All scraping methods failed. Browser-like: {browser_error if 'browser_error' in locals() else 'Not attempted'}, Regular: {e}, Playwright not available")
+
+async def scrape_website_browser_like(url: str) -> Tuple[BeautifulSoup, str]:
+    """
+    Scrape website with very browser-like headers to avoid bot detection.
+    This should get the full HTML including head section and scripts.
+    """
+    print(f"Attempting browser-like scraping for {url}")
+    
+    # Very browser-like headers
+    headers = {
+        "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36",
+        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7",
+        "Accept-Language": "en-US,en;q=0.9",
+        "Accept-Encoding": "gzip, deflate, br",
+        "DNT": "1",
+        "Connection": "keep-alive",
+        "Upgrade-Insecure-Requests": "1",
+        "Sec-Fetch-Dest": "document",
+        "Sec-Fetch-Mode": "navigate",
+        "Sec-Fetch-Site": "none",
+        "Sec-Fetch-User": "?1",
+        "Cache-Control": "max-age=0",
+        "sec-ch-ua": '"Not_A Brand";v="8", "Chromium";v="121", "Google Chrome";v="121"',
+        "sec-ch-ua-mobile": "?0",
+        "sec-ch-ua-platform": '"macOS"'
+    }
+    
+    timeout_config = httpx.Timeout(
+        connect=15.0,
+        read=25.0,
+        write=15.0,
+        pool=10.0
+    )
+    
+    try:
+        async with httpx.AsyncClient(
+            timeout=timeout_config,
+            follow_redirects=True,
+            verify=True
+        ) as client:
+            # Add a small delay to seem more human-like
+            await asyncio.sleep(random.uniform(1.0, 3.0))
+            
+            response = await client.get(url, headers=headers)
+            response.raise_for_status()
+            
+            soup = BeautifulSoup(response.text, "html.parser")
+            
+            # Check if we got the complete HTML BEFORE extracting text
+            has_head = soup.find('head') is not None
+            has_doctype = '<!DOCTYPE' in response.text[:100]
+            
+            # Extract clean text (this should not modify the original soup)
+            all_text = _extract_clean_text(soup)
+            
+            print(f"Browser-like scraping result:")
+            print(f"  - HTML length: {len(response.text)}")
+            print(f"  - Has DOCTYPE: {has_doctype}")
+            print(f"  - Has head section: {has_head}")
+            print(f"  - Script tags found: {len(soup.find_all('script'))}")
+            
+            return soup, all_text
+            
+    except Exception as e:
+        print(f"Browser-like scraping failed: {str(e)}")
+        raise
+
 def _extract_clean_text(soup: BeautifulSoup) -> str:
     """
     Extract clean, readable text from BeautifulSoup object.
     Filters out binary content, scripts, and non-printable characters.
+    Note: This function works on a copy to avoid modifying the original soup.
     """
+    # Work on a copy to avoid modifying the original soup
+    import copy
+    soup_copy = copy.deepcopy(soup)
+    
     # Remove problematic elements that often contain binary/encoded content
-    for element in soup(['script', 'style', 'noscript', 'meta', 'link', 'head']):
+    for element in soup_copy(['script', 'style', 'noscript', 'meta', 'link', 'head']):
         element.decompose()
     
     # Remove HTML comments
-    comments = soup.find_all(string=lambda text: isinstance(text, Comment))
+    comments = soup_copy.find_all(string=lambda text: isinstance(text, Comment))
     for comment in comments:
         comment.extract()
     
     # Remove elements with data URIs (often contain base64 encoded binary data)
-    for element in soup.find_all(attrs={'src': re.compile(r'^data:', re.I)}):
+    for element in soup_copy.find_all(attrs={'src': re.compile(r'^data:', re.I)}):
         element.decompose()
-    for element in soup.find_all(attrs={'href': re.compile(r'^data:', re.I)}):
+    for element in soup_copy.find_all(attrs={'href': re.compile(r'^data:', re.I)}):
         element.decompose()
     
     # Extract text from remaining elements
-    all_text = soup.get_text(separator=' ', strip=True)
+    all_text = soup_copy.get_text(separator=' ', strip=True)
     
     # More robust character filtering
     # Remove control characters and other problematic characters, but keep Unicode letters/digits
@@ -330,7 +545,7 @@ def _extract_clean_text(soup: BeautifulSoup) -> str:
                  + " falling back to content-only extraction")
             
             # Try to extract only from common content elements
-            content_elements = soup.find_all(['p', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'li', 'td', 'th', 'div', 'span', 'article', 'section', 'main', 'nav', 'footer', 'header'])
+            content_elements = soup_copy.find_all(['p', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'li', 'td', 'th', 'div', 'span', 'article', 'section', 'main', 'nav', 'footer', 'header'])
             if content_elements:
                 content_texts = []
                 for element in content_elements:
