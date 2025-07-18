@@ -3,19 +3,39 @@ Strategy Review Analyzer module.
 This module contains functionality to analyze a company's strategic positioning.
 """
 
-from typing import Dict, Any, Tuple, List
+from typing import Dict, Any, Tuple, List, Set
 from bs4 import BeautifulSoup
 import httpx
 import json
 import re
 import asyncio
+from datetime import datetime, timedelta
 from urllib.parse import urlparse, urlunparse, urljoin
 from app.services.analysis.base import BaseAnalyzer
+from app.core.config import settings
 from langdetect import detect, LangDetectException
 from app.services.analysis.utils.scrape_utils import ( check_robots_txt, get_potential_sitemap_urls, is_valid_sitemap )
+from app.services.analysis.utils.reddit_utils import log_scale, exp_decay
+from app.schemas.analysis import RedditResult
 
 class StrategyReviewAnalyzer(BaseAnalyzer):
     """Analyzer for evaluating strategic positioning of a company."""
+    
+    def __init__(self):
+        """Initialize the analyzer with Reddit client if credentials are available."""
+        self.reddit = None
+        if settings.REDDIT_CLIENT_ID and settings.REDDIT_CLIENT_SECRET and settings.REDDIT_USER_AGENT:
+            try:
+                import asyncpraw
+                self.reddit = asyncpraw.Reddit(
+                    client_id=settings.REDDIT_CLIENT_ID,
+                    client_secret=settings.REDDIT_CLIENT_SECRET,
+                    user_agent=settings.REDDIT_USER_AGENT,
+                )
+            except ImportError:
+                print("Warning: asyncpraw not installed. Reddit presence checking will be limited.")
+            except Exception as e:
+                print(f"Warning: Could not initialize Reddit client: {str(e)}")
     
     async def analyze(self, name: str, url: str, soup: BeautifulSoup = None, all_text: str = None) -> Tuple[float, Dict[str, Any]]:
         """
@@ -37,8 +57,8 @@ class StrategyReviewAnalyzer(BaseAnalyzer):
         # 1. Content Answerability
         answerability_score, answerability_results = await self._analyze_content_answerability(all_text, soup)
         
-        # 2. Knowledge Base Presence 
-        kb_score, kb_results = await self._analyze_knowledge_base_presence(name)
+        # 2. Web Presence 
+        web_presence_score, web_presence_results = await self._analyze_web_presence(name)
         
         # 3. Structured Data Implementation
         structured_data_score, structured_data_results = self._analyze_structured_data(soup)
@@ -47,12 +67,12 @@ class StrategyReviewAnalyzer(BaseAnalyzer):
         accessibility_score, accessibility_results = await self._analyze_crawler_accessibility(url, soup)
         
         strategy_review_result["answerability"] = answerability_results
-        strategy_review_result["knowledge_base"] = kb_results
+        strategy_review_result["web_presence"] = web_presence_results
         strategy_review_result["structured_data"] = structured_data_results
         strategy_review_result["ai_crawler_accessibility"] = accessibility_results
         
         # Calculate the overall score as the average of all component scores
-        score = (answerability_score + kb_score + structured_data_score + accessibility_score) / 4
+        score = (answerability_score + web_presence_score + structured_data_score + accessibility_score) / 4
                 
         return score, strategy_review_result
     
@@ -138,7 +158,13 @@ class StrategyReviewAnalyzer(BaseAnalyzer):
                     # Data can be a single dictionary or a list of dictionaries
                     items_to_check = []
                     if isinstance(data, dict):
-                        items_to_check.append(data)
+                        # Check if this is a @graph structure
+                        if '@graph' in data and isinstance(data['@graph'], list):
+                            # Process items inside the @graph array
+                            items_to_check.extend(data['@graph'])
+                        else:
+                            # Regular single dictionary
+                            items_to_check.append(data)
                     elif isinstance(data, list):
                         items_to_check.extend(data)
 
@@ -255,7 +281,25 @@ class StrategyReviewAnalyzer(BaseAnalyzer):
         
         return score, results
     
-    async def _analyze_knowledge_base_presence(self, company_name: str) -> Tuple[float, Dict[str, Any]]:
+    async def _analyze_web_presence(self, company_name: str) -> Tuple[float, Dict[str, Any]]:
+        """Analyze web presence across multiple platforms."""
+        # Get Wikipedia presence score and results
+        wikipedia_score, wikipedia_results = await self._check_wikipedia_presence(company_name)
+        
+        # Get Reddit presence score and results
+        reddit_score, reddit_results = await self._check_reddit_presence(company_name)
+        
+        # Combine results
+        combined_results = {
+            "wikipedia": wikipedia_results,
+            "reddit": reddit_results,
+            "total_score": wikipedia_score + reddit_score
+        }
+        
+        return wikipedia_score + reddit_score, combined_results
+    
+    async def _check_wikipedia_presence(self, company_name: str) -> Tuple[float, Dict[str, Any]]:
+        """Check for Wikipedia page presence. Returns 0-50 points."""
         results = {
             "has_wikipedia_page": False,
             "wikipedia_url": None,
@@ -288,9 +332,119 @@ class StrategyReviewAnalyzer(BaseAnalyzer):
             print(f"Error checking Wikipedia presence: {str(e)}")
             results["error"] = str(e)
         
-        results["score"] = 100.0 if results["has_wikipedia_page"] else 0.0
+        results["score"] = 50.0 if results["has_wikipedia_page"] else 0.0
         
         return results["score"], results
+    
+    async def _check_reddit_presence(self, company_name: str) -> Tuple[float, Dict[str, Any]]:
+        """
+        Live-only Reddit Presence Score (0-50). Components:
+            subreddit ownership      7.5
+            members                  7.5
+            30-day mention volume    10
+            engagement               10
+            recency                   7.5
+            diversity                 7.5
+        """
+        if not self.reddit:
+            # Fallback for when Reddit API is not available
+            results = {
+                "error": "Reddit API not configured",
+                "subreddit": {"label": "Subreddit ownership", "raw_value": False, "score": 0.0},
+                "members": {"label": "Members", "raw_value": 0, "score": 0.0},
+                "mention_volume": {"label": "30-day mentions", "raw_value": 0, "score": 0.0},
+                "engagement": {"label": "Avg karma+replies", "raw_value": 0.0, "score": 0.0},
+                "recency": {"label": "Latest mention hrs", "raw_value": None, "score": 0.0},
+                "diversity": {"label": "Unique subreddits", "raw_value": 0, "score": 0.0},
+                "total_score": 0.0
+            }
+            return 0.0, results
+
+        # 1. Subreddit check --------------------------------------------------
+        branded_name = company_name.lower().replace(" ", "")
+        subreddit_score = members_score = subs_raw = 0.0
+        has_subreddit = False
+
+        try:
+            from asyncprawcore.exceptions import NotFound
+            sub = await self.reddit.subreddit(branded_name, fetch=True)
+            has_subreddit = True
+            subs_raw = sub.subscribers or 0
+            subreddit_score = 7.5
+            members_score = log_scale(subs_raw, 7.5, k=5_000)
+        except NotFound:
+            sub = None  # brand doesn't own a subreddit
+        except Exception as exc:
+            # network hiccup—treat as no subreddit but log it
+            print(f"[Reddit] err loading /r/{branded_name}: {exc}")
+            sub = None
+
+        # 2. Search last 30 days ---------------------------------------------
+        thirty_days = datetime.utcnow() - timedelta(days=30)
+        query = f'"{company_name}"'  # quoted phrase
+        mention_count = 0
+        upvote_plus_comments = 0
+        latest_ts: float | None = None
+        unique_subs: Set[str] = set()
+
+        try:
+            subreddit_all = await self.reddit.subreddit("all")
+            # PRAW caps at 500 results; adjust `limit` if needed
+            async for s in subreddit_all.search(
+                query=query,
+                sort="new",
+                time_filter="month",
+                limit=500,
+            ):
+                # coarse filter: ensure it's ≤ 30 days (API already does)
+                mention_count += 1
+                upvote_plus_comments += s.score + s.num_comments
+                unique_subs.add(s.subreddit.display_name)
+                latest_ts = max(latest_ts or 0, s.created_utc)
+        except asyncio.TimeoutError:
+            print(f"[Reddit] Search timeout for {company_name}")
+        except Exception as exc:
+            error_msg = str(exc).lower()
+            if "rate limit" in error_msg or "429" in error_msg:
+                print(f"[Reddit] Rate limited, backing off...")
+                await asyncio.sleep(60)  # Wait 1 minute
+                # Could retry once here
+            else:
+                print(f"[Reddit] live search failed: {exc}")
+
+        # 3. Score each metric -----------------------------------------------
+        volume_score = log_scale(mention_count, 10, k=1_000)
+        avg_eng = (upvote_plus_comments / mention_count) if mention_count else 0
+        engagement_score = log_scale(avg_eng, 10, k=50)
+        hours_since = (
+            (datetime.utcnow().timestamp() - latest_ts) / 3600.0
+            if latest_ts
+            else None
+        )
+        recency_score = exp_decay(hours_since, half_life_h=72, max_pts=7.5)
+        diversity_score = min(7.5, len(unique_subs) * 1.5)  # 5 subs → 7.5 pts
+
+        total = round(
+            subreddit_score
+            + members_score
+            + volume_score
+            + engagement_score
+            + recency_score
+            + diversity_score,
+            2,
+        )
+
+        results = {
+            "subreddit": {"label": "Subreddit ownership", "raw_value": has_subreddit, "score": subreddit_score},
+            "members": {"label": "Members", "raw_value": int(subs_raw), "score": members_score},
+            "mention_volume": {"label": "30-day mentions", "raw_value": mention_count, "score": volume_score},
+            "engagement": {"label": "Avg karma+replies", "raw_value": round(avg_eng, 2), "score": engagement_score},
+            "recency": {"label": "Latest mention hrs", "raw_value": round(hours_since, 1) if hours_since else None, "score": recency_score},
+            "diversity": {"label": "Unique subreddits", "raw_value": len(unique_subs), "score": diversity_score},
+            "total_score": total,
+        }
+
+        return total, results
     
     async def _analyze_content_answerability(self, all_text: str, soup: BeautifulSoup = None) -> Tuple[float, Dict[str, Any]]:
         """

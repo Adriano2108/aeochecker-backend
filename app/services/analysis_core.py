@@ -268,12 +268,17 @@ class AnalysisService:
     @classmethod
     def _build_analysis_items(cls, analysis_scores: Dict[str, float], analysis_results: Dict[str, Any]) -> list:
         """Build the analysis items structure for the report."""
+        
+        # Add overall score to AI presence result
+        ai_presence_result = analysis_results["ai_presence"].copy()
+        ai_presence_result["score"] = analysis_scores["ai_presence"]
+        
         analysis_items = [
             {
                 "id": "ai_presence",
                 "title": "AI Presence",
                 "score": analysis_scores["ai_presence"],
-                "result": analysis_results["ai_presence"],
+                "result": ai_presence_result,
                 "completed": True
             },
             {
@@ -362,6 +367,176 @@ class AnalysisService:
         }
 
     @staticmethod
+    def _migrate_old_report_format(result: dict) -> dict:
+        """
+        Migrate old report formats to the current expected schema format.
+        This handles backward compatibility for reports created before schema changes.
+        """
+        if not result.get("analysis_items"):
+            return result
+        
+        migrated_items = []
+        
+        for item in result["analysis_items"]:
+            # Ensure camelCase conversion for IDs
+            if item.get("id") == "ai_presence":
+                item["id"] = "aiPresence"
+            elif item.get("id") == "competitor_landscape":
+                item["id"] = "competitorLandscape"
+            elif item.get("id") == "strategy_review":
+                item["id"] = "strategyReview"
+            
+            # Handle AI Presence migration
+            if item.get("id") == "aiPresence":
+                # Ensure the result has a score field at the root level
+                if "result" in item and "score" not in item.get("result", {}):
+                    item["result"]["score"] = item.get("score", 0.0)
+                migrated_items.append(item)
+                
+            # Handle Competitor Landscape migration  
+            elif item.get("id") == "competitorLandscape":
+                # Ensure each LLM result has the required fields
+                if "result" in item:
+                    for llm_name in ["openai", "anthropic", "gemini", "perplexity"]:
+                        if llm_name in item["result"] and item["result"][llm_name]:
+                            llm_result = item["result"][llm_name]
+                            # Add missing fields if they don't exist
+                            if "competitors" not in llm_result:
+                                llm_result["competitors"] = []
+                            if "included" not in llm_result:
+                                llm_result["included"] = False
+                migrated_items.append(item)
+                
+            # Handle Strategy Review migration (most complex)
+            elif item.get("id") == "strategyReview":
+                if "result" in item:
+                    old_result = item["result"]
+                    new_result = {}
+                    
+                    # Migrate knowledge_base to web_presence
+                    if "knowledge_base" in old_result:
+                        kb = old_result["knowledge_base"]
+                        new_result["web_presence"] = {
+                            "wikipedia": {
+                                "has_wikipedia_page": kb.get("has_wikipedia_page", False),
+                                "wikipedia_url": kb.get("wikipedia_url"),
+                                "score": kb.get("score", 0.0)
+                            },
+                            "reddit": {
+                                "subreddit": {"label": "Subreddit ownership", "raw_value": False, "score": 0.0},
+                                "members": {"label": "Members", "raw_value": 0, "score": 0.0},
+                                "mention_volume": {"label": "30-day mentions", "raw_value": 0, "score": 0.0},
+                                "engagement": {"label": "Avg karma+replies", "raw_value": 0.0, "score": 0.0},
+                                "recency": {"label": "Latest mention hrs", "raw_value": None, "score": 0.0},
+                                "diversity": {"label": "Unique subreddits", "raw_value": 0, "score": 0.0},
+                                "total_score": 0.0
+                            },
+                            "total_score": kb.get("score", 0.0)
+                        }
+                    elif "web_presence" in old_result:
+                        new_result["web_presence"] = old_result["web_presence"]
+                    else:
+                        # Create default web_presence
+                        new_result["web_presence"] = {
+                            "wikipedia": {
+                                "has_wikipedia_page": False,
+                                "wikipedia_url": None,
+                                "score": 0.0
+                            },
+                            "reddit": {
+                                "subreddit": {"label": "Subreddit ownership", "raw_value": False, "score": 0.0},
+                                "members": {"label": "Members", "raw_value": 0, "score": 0.0},
+                                "mention_volume": {"label": "30-day mentions", "raw_value": 0, "score": 0.0},
+                                "engagement": {"label": "Avg karma+replies", "raw_value": 0.0, "score": 0.0},
+                                "recency": {"label": "Latest mention hrs", "raw_value": None, "score": 0.0},
+                                "diversity": {"label": "Unique subreddits", "raw_value": 0, "score": 0.0},
+                                "total_score": 0.0
+                            },
+                            "total_score": 0.0
+                        }
+                    
+                    # Add missing fields with defaults if they don't exist
+                    if "answerability" not in old_result:
+                        new_result["answerability"] = {
+                            "total_phrases": 0,
+                            "is_good_length_phrase": 0,
+                            "is_conversational_phrase": 0,
+                            "has_statistics_phrase": 0,
+                            "has_citation_phrase": 0,
+                            "has_citations_section": False,
+                            "score": 0.0
+                        }
+                    else:
+                        new_result["answerability"] = old_result["answerability"]
+                    
+                    if "structured_data" not in old_result:
+                        new_result["structured_data"] = {
+                            "schema_markup_present": False,
+                            "schema_types_found": [],
+                            "specific_schemas": {
+                                "faq_page": False,
+                                "article": False,
+                                "review": False
+                            },
+                            "semantic_elements": {
+                                "present": False,
+                                "unique_types_found": [],
+                                "count_unique_types": 0,
+                                "all_tags_count": 0,
+                                "semantic_tags_count": 0,
+                                "non_semantic_tags_count": 0,
+                                "semantic_ratio": 0.0
+                            },
+                            "score": 0.0
+                        }
+                    else:
+                        # Handle potential old specific_schemas format
+                        structured_data = old_result["structured_data"].copy()
+                        if "specific_schemas" in structured_data:
+                            old_specific = structured_data["specific_schemas"]
+                            # Map old field names to new field names
+                            new_specific = {
+                                "faq_page": old_specific.get("FAQPage", old_specific.get("faq_page", False)),
+                                "article": old_specific.get("Article", old_specific.get("article", False)),
+                                "review": old_specific.get("Review", old_specific.get("review", False))
+                            }
+                            structured_data["specific_schemas"] = new_specific
+                        new_result["structured_data"] = structured_data
+                    
+                    if "ai_crawler_accessibility" not in old_result:
+                        new_result["ai_crawler_accessibility"] = {
+                            "sitemap_found": False,
+                            "robots_txt_found": False,
+                            "llms_txt_found": False,
+                            "llm_txt_found": False,
+                            "pre_rendered_content": {
+                                "likely_pre_rendered": False,
+                                "text_length": 0,
+                                "js_framework_hint": False
+                            },
+                            "language": {
+                                "detected_languages": ["en"],
+                                "is_english": False,
+                                "english_version_url": None
+                            },
+                            "score": 0.0
+                        }
+                    else:
+                        new_result["ai_crawler_accessibility"] = old_result["ai_crawler_accessibility"]
+                    
+                    # Update the item with the new result structure
+                    item["result"] = new_result
+                
+                migrated_items.append(item)
+            else:
+                # For any other items, keep as-is
+                migrated_items.append(item)
+        
+        # Update the result with migrated items
+        result["analysis_items"] = migrated_items
+        return result
+
+    @staticmethod
     async def get_job_status(job_id: str, user_id: str) -> Dict[str, Any]:
         """
         Get the status of an analysis job
@@ -431,6 +606,9 @@ class AnalysisService:
         # Check if report is deleted
         if result.get("deleted", False):
             return {"status": AnalysisStatusConstants.NOT_FOUND}
+
+        # Apply migration for old report formats
+        result = AnalysisService._migrate_old_report_format(result)
 
         user_ref = db.collection("users").document(user_id)
         user = user_ref.get()
@@ -528,6 +706,9 @@ class AnalysisService:
         # Check if report is deleted
         if result.get("deleted", False):
             return {"status": AnalysisStatusConstants.NOT_FOUND}
+        
+        # Apply migration for old report formats
+        result = AnalysisService._migrate_old_report_format(result)
         
         should_show_dummy = True
 

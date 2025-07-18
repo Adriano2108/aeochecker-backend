@@ -10,7 +10,7 @@ import ast
 from app.services.analysis.utils.llm_utils import query_openai, query_anthropic, query_gemini, query_perplexity
 from collections import Counter
 import re
-from app.schemas.analysis import CompetitorLandscapeAnalysisResult, LLMCompetitorResult
+from app.schemas.analysis import CompetitorLandscapeResult, LLMCompetitorResult
 import json
 
 class CompetitorLandscapeAnalyzer(BaseAnalyzer):
@@ -354,7 +354,7 @@ class CompetitorLandscapeAnalyzer(BaseAnalyzer):
         final_score = total_score
 
         # Create final result with individual LLM results
-        final_result = CompetitorLandscapeAnalysisResult(
+        final_result = CompetitorLandscapeResult(
             openai=competitor_results.get("openai"),
             anthropic=competitor_results.get("anthropic"),
             gemini=competitor_results.get("gemini"),

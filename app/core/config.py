@@ -10,7 +10,7 @@ class Settings(BaseSettings):
     API_V1_STR: str = "/api/v1"
     PROJECT_NAME: str = "AEOChecker API"
     APP_ENV: Literal["development", "production"] = os.getenv("APP_ENV", "development")
-    BACKEND_LAST_BREAKING_CHANGE_DATE: str = os.getenv("BACKEND_LAST_BREAKING_CHANGE_DATE", datetime(2025, 7, 17, 10, 0, 0).isoformat())
+    BACKEND_LAST_BREAKING_CHANGE_DATE: str = os.getenv("BACKEND_LAST_BREAKING_CHANGE_DATE", datetime(2025, 7, 4, 10, 0, 0).isoformat())
     
     # CORS
     CORS_ORIGINS: list = [
@@ -47,6 +47,11 @@ class Settings(BaseSettings):
     STRIPE_WEBHOOK_SECRET_DEV: str = os.getenv("STRIPE_WEBHOOK_SECRET_DEV", "")
     STRIPE_PRICE_ID_STARTER_DEV: str = os.getenv("STRIPE_PRICE_ID_STARTER_DEV", "")
     STRIPE_PRICE_ID_DEVELOPER_DEV: str = os.getenv("STRIPE_PRICE_ID_DEVELOPER_DEV", "")
+
+    # Reddit API Variables
+    REDDIT_CLIENT_ID: str = os.getenv("REDDIT_CLIENT_ID", "")
+    REDDIT_CLIENT_SECRET: str = os.getenv("REDDIT_CLIENT_SECRET", "")
+    REDDIT_USER_AGENT: str = os.getenv("REDDIT_USER_AGENT", "")
 
     @property
     def STRIPE_SECRET_KEY(self) -> str:

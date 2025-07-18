@@ -110,21 +110,14 @@ def generate_dummy_report(original_report: dict) -> dict:
             "score": 0.0,
             "completed": True,
             "result": {
-                "included": False,
-                "sorted_competitors": [
-                    {
-                        "name": "Company 1",
-                        "count": 2
-                    },
-                    {
-                        "name": "Company 2",
-                        "count": 1
-                    },
-                    {
-                        "name": "Company 3",
-                        "count": 1
-                    }
-                ],
+                "openai": {
+                    "competitors": ["Company 1", "Company 2", "Company 3"],
+                    "included": False,
+                    "score": 0.0
+                },
+                "anthropic": None,
+                "gemini": None,
+                "perplexity": None
             },
         },
         {
@@ -142,10 +135,22 @@ def generate_dummy_report(original_report: dict) -> dict:
                     "has_citations_section": False,
                     "score": 0
                 },
-                "knowledge_base": {
-                    "has_wikipedia_page": False,
-                    "wikipedia_url": None,
-                    "score": 0
+                "web_presence": {
+                    "wikipedia": {
+                        "has_wikipedia_page": False,
+                        "wikipedia_url": None,
+                        "score": 0.0
+                    },
+                    "reddit": {
+                        "subreddit": {"label": "Subreddit ownership", "raw_value": False, "score": 0.0},
+                        "members": {"label": "Members", "raw_value": 0, "score": 0.0},
+                        "mention_volume": {"label": "30-day mentions", "raw_value": 0, "score": 0.0},
+                        "engagement": {"label": "Avg karma+replies", "raw_value": 0.0, "score": 0.0},
+                        "recency": {"label": "Latest mention hrs", "raw_value": None, "score": 0.0},
+                        "diversity": {"label": "Unique subreddits", "raw_value": 0, "score": 0.0},
+                        "total_score": 0.0
+                    },
+                    "total_score": 0.0
                 },
                 "structured_data": {
                     "schema_markup_present": False,
@@ -179,8 +184,7 @@ def generate_dummy_report(original_report: dict) -> dict:
                     "language": {
                         "detected_languages": ['en'],
                         "is_english": False,
-                        "english_version_url": None,
-                        "score": 0
+                        "english_version_url": None
                     },
                     "score": 0
                 },
