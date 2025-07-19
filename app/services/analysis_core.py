@@ -35,14 +35,14 @@ class AnalysisService:
             "user_id": user_id,
             "status": AnalysisStatusConstants.PROCESSING,
             "created_at": datetime.now().isoformat(),
-            "progress": 0
+            "progress": 0.1
         }
         job_ref.set(initial_job_data) 
         
         return {
             "job_id": job_id,
             "status": AnalysisStatusConstants.PROCESSING,
-            "progress": 0
+            "progress": 0.1
         }
 
     @classmethod
@@ -54,17 +54,17 @@ class AnalysisService:
         job_ref = db.collection("analysis_jobs").document(job_id)
         
         try:
-            # Step 1: Validate URL (progress 0.10)
+            # Step 1: Validate URL (progress 0.15)
             validated_url = await cls._validate_url(job_id, url, job_ref)
             if not validated_url:
                 return
             
-            # Step 2: Scrape website & company facts (progress 0.20)
+            # Step 2: Scrape website & company facts (progress 0.25)
             soup, all_text, company_facts = await cls._scrape_website_data(job_id, validated_url, job_ref)
             if not company_facts:
                 return
             
-            # Step 3: Run analyses in parallel (progress +0.20 each)
+            # Step 3: Run analyses in parallel (progress +0.25 each)
             analysis_scores, analysis_results = await cls._run_parallel_analyses(job_id, company_facts, validated_url, soup, all_text, job_ref)
             if not analysis_scores:
                 return
@@ -92,7 +92,7 @@ class AnalysisService:
         """Validate and get the best URL for analysis."""
         try:
             validated_url = await _validate_and_get_best_url(url)
-            job_ref.update({"progress": 0.10})
+            job_ref.update({"progress": 0.15})
             print(f"Validated URL for job {job_id}: {validated_url}")
             return validated_url
         except Exception as e:
@@ -214,8 +214,8 @@ class AnalysisService:
             })
             return None, None, None
         
-        job_ref.update({"progress": 0.20})
-        print(f"Progress updated to 0.20 for job {job_id}")
+        job_ref.update({"progress": 0.25})
+        print(f"Progress updated to 0.25 for job {job_id}")
         
         return soup, all_text, company_facts
 
@@ -227,41 +227,57 @@ class AnalysisService:
         competitor_landscape_analyzer = CompetitorLandscapeAnalyzer()
         strategy_review_analyzer = StrategyReviewAnalyzer()
 
-        # Create tasks for each analysis
-        ai_task = asyncio.create_task(ai_presence_analyzer.analyze(company_facts))
-        competitor_task = asyncio.create_task(competitor_landscape_analyzer.analyze(company_facts))
-        strategy_task = asyncio.create_task(
-            strategy_review_analyzer.analyze(company_facts["name"], url, soup, all_text)
-        )
+        # Create tasks for each analysis and map them to their names
+        tasks = {
+            "ai_presence": asyncio.create_task(ai_presence_analyzer.analyze(company_facts)),
+            "competitor_landscape": asyncio.create_task(competitor_landscape_analyzer.analyze(company_facts)),
+            "strategy_review": asyncio.create_task(
+                strategy_review_analyzer.analyze(company_facts["name"], url, soup, all_text)
+            ),
+        }
+        task_to_name = {task: name for name, task in tasks.items()}
+        pending_tasks = set(tasks.values())
 
+        analysis_scores: Dict[str, float] = {}
+        analysis_results: Dict[str, Any] = {}
+        
         try:
-            results = await asyncio.gather(ai_task, competitor_task, strategy_task, return_exceptions=True)
-            
-            task_names = ["ai_presence", "competitor_landscape", "strategy_review"]
-            analysis_scores: Dict[str, float] = {}
-            analysis_results: Dict[str, Any] = {}
-            
-            for i, result in enumerate(results):
-                analysis_name = task_names[i]
+            while pending_tasks:
+                done, pending_tasks = await asyncio.wait(
+                    pending_tasks, return_when=asyncio.FIRST_COMPLETED
+                )
+
+                for future in done:
+                    analysis_name = task_to_name[future]
+                    
+                    try:
+                        result = future.result()
+                    except Exception as e:
+                        job_ref.update({
+                            "status": AnalysisStatusConstants.FAILED,
+                            "error": f"{analysis_name} analysis failed: {str(e)}",
+                            "completed_at": datetime.now().isoformat(),
+                        })
+                        print(f"Error during {analysis_name} analysis for job {job_id}: {str(e)}")
+                        
+                        # Cancel any remaining pending tasks
+                        for task in pending_tasks:
+                            task.cancel()
+                        
+                        # Wait for them to cancel and then exit
+                        if pending_tasks:
+                            await asyncio.wait(pending_tasks)
+                        
+                        return None, None
                 
-                if isinstance(result, Exception):
-                    job_ref.update({
-                        "status": AnalysisStatusConstants.FAILED,
-                        "error": f"{analysis_name} analysis failed: {str(result)}",
-                        "completed_at": datetime.now().isoformat(),
-                    })
-                    print(f"Error during {analysis_name} analysis for job {job_id}: {str(result)}")
-                    return None, None
-                
-                score, analysis_result = result
-                analysis_scores[analysis_name] = score
-                analysis_results[analysis_name] = analysis_result
-                
-                # Update progress (+0.20 for each completed analysis)
-                progress = 0.20 + (i + 1) * 0.20
-                job_ref.update({"progress": min(progress, 0.80)})
-                print(f"Progress updated to {min(progress, 0.80)} for job {job_id} - {analysis_name} completed")
-                
+                    score, analysis_result = result
+                    analysis_scores[analysis_name] = score
+                    analysis_results[analysis_name] = analysis_result
+                    
+                    # Update progress (+0.25 for each completed analysis)
+                    job_ref.update({"progress": firestore.Increment(0.25)})
+                    print(f"Progress incremented for job {job_id} - {analysis_name} completed")
+        
         except Exception as e:
             job_ref.update({
                 "status": AnalysisStatusConstants.FAILED,
@@ -271,7 +287,11 @@ class AnalysisService:
             print(f"Error during analysis execution for job {job_id}: {str(e)}")
             return None, None
 
-        return analysis_scores, analysis_results
+        # Sort results to maintain a consistent order in the final report
+        sorted_scores = {name: analysis_scores[name] for name in tasks.keys() if name in analysis_scores}
+        sorted_results = {name: analysis_results[name] for name in analysis_results}
+
+        return sorted_scores, sorted_results
 
     @classmethod
     def _build_analysis_items(cls, analysis_scores: Dict[str, float], analysis_results: Dict[str, Any]) -> list:

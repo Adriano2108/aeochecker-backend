@@ -78,8 +78,6 @@ class StrategyReviewAnalyzer(BaseAnalyzer):
         
         score = (answerability_score + web_presence_score + structured_data_score + accessibility_score) / 4
 
-        print(f"Answerability score: {answerability_score}")
-                
         return score, strategy_review_result
     
     def _calculate_structured_data_score(self, results: Dict[str, Any]) -> float:

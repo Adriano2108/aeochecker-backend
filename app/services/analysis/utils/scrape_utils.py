@@ -780,8 +780,6 @@ def extract_company_name(soup: BeautifulSoup, url: str) -> str:
         
         return name
     
-    print(f"\n[DEBUG] Starting company name extraction for URL: {url}")
-    
     potential_names = []
     separators = [' - ', ' | ', ' • ', ' : ', ' · ', ' – ', ': ', ' — ', ' . ']  # Added '. ' for period + space
     
@@ -794,7 +792,6 @@ def extract_company_name(soup: BeautifulSoup, url: str) -> str:
     ]
     
     high_priority_names = []  # Track high-priority names separately
-    print(f"[DEBUG] Checking high-priority sources (og:site_name, etc.)...")
     for tag_name, attrs in site_name_selectors:
         element = soup.find(tag_name, attrs)
         if element and element.get("content"):
@@ -803,116 +800,74 @@ def extract_company_name(soup: BeautifulSoup, url: str) -> str:
             if content.startswith("@"):
                 content = content[1:]
             if content and len(content.split()) <= 3 and _is_valid_company_name(content):  # Site names should be short and valid
-                print(f"[DEBUG] Found high-priority name: '{content}' from {attrs}")
                 potential_names.append(content)
                 high_priority_names.append(content)
-            elif content and len(content.split()) <= 3:
-                print(f"[DEBUG] Filtered out invalid high-priority name: '{content}' from {attrs}")
-    
-    print(f"[DEBUG] High-priority names found: {high_priority_names}")
     
     # 2. Check title tag (MEDIUM-HIGH PRIORITY)
     title_based_names = []  # Track title-based names separately
-    print(f"[DEBUG] Checking <title> tag...")
     if soup.title and soup.title.string:
         title_text = soup.title.string.strip()
-        print(f"[DEBUG] Title text: '{title_text}'")
         found_separator = False
         
         for separator in separators:
             if separator in title_text:
-                print(f"[DEBUG] Found separator '{separator}' in title")
                 parts = title_text.split(separator, 1)  # Split only on first occurrence
                 left_part = parts[0].strip()
                 right_part = parts[1].strip() if len(parts) > 1 else ""
                 
-                print(f"[DEBUG] Title parts - Left: '{left_part}', Right: '{right_part}'")
-                
                 # Add both parts if they're 3 words or less and valid
                 if left_part and len(left_part.split()) <= 3 and _is_valid_company_name(left_part):
-                    print(f"[DEBUG] Adding left part from title: '{left_part}'")
                     potential_names.append(left_part)
                     title_based_names.append(left_part)
-                elif left_part and len(left_part.split()) <= 3:
-                    print(f"[DEBUG] Filtered out invalid left part from title: '{left_part}'")
-                    
                 if right_part and len(right_part.split()) <= 3 and _is_valid_company_name(right_part):
-                    print(f"[DEBUG] Adding right part from title: '{right_part}'")
                     potential_names.append(right_part)
                     title_based_names.append(right_part)
-                elif right_part and len(right_part.split()) <= 3:
-                    print(f"[DEBUG] Filtered out invalid right part from title: '{right_part}'")
                 
                 found_separator = True
                 break
         
         if not found_separator:
             word_count = len(title_text.split())
-            print(f"[DEBUG] No separator found in title, word count: {word_count}")
             if word_count <= 3 and _is_valid_company_name(title_text):
-                print(f"[DEBUG] Adding whole title: '{title_text}'")
                 potential_names.append(title_text)
                 title_based_names.append(title_text)
-            elif word_count <= 3:
-                print(f"[DEBUG] Filtered out invalid whole title: '{title_text}'")
     
     # 3. Check og:title (MEDIUM-HIGH PRIORITY)
-    print(f"[DEBUG] Checking og:title...")
     og_title = soup.find("meta", property="og:title")
     if og_title and og_title.get("content"):
         title_text = og_title["content"].strip()
-        print(f"[DEBUG] OG title text: '{title_text}'")
         found_separator = False
         
         for separator in separators:
             if separator in title_text:
-                print(f"[DEBUG] Found separator '{separator}' in og:title")
                 parts = title_text.split(separator, 1)  # Split only on first occurrence
                 left_part = parts[0].strip()
                 right_part = parts[1].strip() if len(parts) > 1 else ""
                 
-                print(f"[DEBUG] OG title parts - Left: '{left_part}', Right: '{right_part}'")
-                
                 # Add both parts if they're 3 words or less and valid
                 if left_part and len(left_part.split()) <= 3 and _is_valid_company_name(left_part):
-                    print(f"[DEBUG] Adding left part from og:title: '{left_part}'")
                     potential_names.append(left_part)
                     title_based_names.append(left_part)
-                elif left_part and len(left_part.split()) <= 3:
-                    print(f"[DEBUG] Filtered out invalid left part from og:title: '{left_part}'")
                     
                 if right_part and len(right_part.split()) <= 3 and _is_valid_company_name(right_part):
-                    print(f"[DEBUG] Adding right part from og:title: '{right_part}'")
                     potential_names.append(right_part)
                     title_based_names.append(right_part)
-                elif right_part and len(right_part.split()) <= 3:
-                    print(f"[DEBUG] Filtered out invalid right part from og:title: '{right_part}'")
                 
                 found_separator = True
                 break
         
         if not found_separator:
             word_count = len(title_text.split())
-            print(f"[DEBUG] No separator found in og:title, word count: {word_count}")
             if word_count <= 3 and _is_valid_company_name(title_text):
-                print(f"[DEBUG] Adding whole og:title: '{title_text}'")
                 potential_names.append(title_text)
                 title_based_names.append(title_text)
-            elif word_count <= 3:
-                print(f"[DEBUG] Filtered out invalid whole og:title: '{title_text}'")
-    
-    print(f"[DEBUG] Title-based names found: {title_based_names}")
     
     # 4. Get domain name as fallback (LOWEST PRIORITY)
-    print(f"[DEBUG] Extracting domain name...")
     domain_name = get_domain_name(url)
     domain_based_names = []
     if domain_name:
-        print(f"[DEBUG] Domain name extracted: '{domain_name}'")
         potential_names.append(domain_name)
         domain_based_names.append(domain_name)
-    
-    print(f"[DEBUG] Domain-based names found: {domain_based_names}")
     
     # Remove empty strings and duplicates while preserving order for priority
     # Also apply domain extension removal during cleaning
@@ -926,15 +881,12 @@ def extract_company_name(soup: BeautifulSoup, url: str) -> str:
                 cleaned_names.append(cleaned_name)
                 seen.add(cleaned_name)
     
-    print(f"[DEBUG] All potential names (deduplicated and domain-cleaned): {cleaned_names}")
     
     if not cleaned_names:
-        print(f"[DEBUG] No names found, returning empty string")
         return ""
     
     # If we only have one name, return it (already domain-cleaned)
     if len(cleaned_names) == 1:
-        print(f"[DEBUG] Only one name found, returning: '{cleaned_names[0]}'")
         return cleaned_names[0]
     
     # Count frequency of each name (case-insensitive)
@@ -943,21 +895,13 @@ def extract_company_name(soup: BeautifulSoup, url: str) -> str:
         name_lower = name.lower()
         name_counts[name_lower] = name_counts.get(name_lower, 0) + 1
     
-    print(f"[DEBUG] Name frequency counts: {name_counts}")
-    
     # Find the most frequent name(s)
     max_count = max(name_counts.values())
     most_frequent_names = [name for name in cleaned_names if name_counts[name.lower()] == max_count]
     
-    print(f"[DEBUG] Most frequent names (count={max_count}): {most_frequent_names}")
-    
     # If there's a clear winner by frequency (and it appears more than once), return it
     if len(most_frequent_names) == 1 and max_count > 1:
-        print(f"[DEBUG] Clear frequency winner found: '{most_frequent_names[0]}'")
         return most_frequent_names[0]
-    
-    # Apply priority rules when there's no clear frequency winner
-    print(f"[DEBUG] Applying priority rules...")
     
     # For priority checking, we need to match against the cleaned names
     cleaned_high_priority = [_remove_domain_extension(name) for name in high_priority_names]
@@ -965,28 +909,21 @@ def extract_company_name(soup: BeautifulSoup, url: str) -> str:
     cleaned_domain_based = [_remove_domain_extension(name) for name in domain_based_names]
     
     # Check for high-priority names first
-    print(f"[DEBUG] Checking cleaned high-priority names: {cleaned_high_priority}")
     for name in cleaned_high_priority:
         if name in most_frequent_names:
-            print(f"[DEBUG] Selected high-priority name: '{name}'")
             return name
     
     # Then check for title-based names
-    print(f"[DEBUG] Checking cleaned title-based names: {cleaned_title_based}")
     for name in cleaned_title_based:
         if name in most_frequent_names:
-            print(f"[DEBUG] Selected title-based name: '{name}'")
             return name
     
     # Finally check domain-based names
-    print(f"[DEBUG] Checking cleaned domain-based names: {cleaned_domain_based}")
     for name in cleaned_domain_based:
         if name in most_frequent_names:
-            print(f"[DEBUG] Selected domain-based name: '{name}'")
             return name
     
     # Return the first name as fallback (already domain-cleaned)
-    print(f"[DEBUG] Using fallback - returning first name: '{cleaned_names[0]}'")
     return cleaned_names[0]
 
 async def scrape_company_facts(url: str, soup: BeautifulSoup, all_text: str) -> dict:
