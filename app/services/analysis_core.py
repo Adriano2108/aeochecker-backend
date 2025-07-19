@@ -275,16 +275,12 @@ class AnalysisService:
     def _build_analysis_items(cls, analysis_scores: Dict[str, float], analysis_results: Dict[str, Any]) -> list:
         """Build the analysis items structure for the report."""
         
-        # Add overall score to AI presence result
-        ai_presence_result = analysis_results["ai_presence"].copy()
-        ai_presence_result["score"] = analysis_scores["ai_presence"]
-        
         analysis_items = [
             {
                 "id": "ai_presence",
                 "title": "AI Presence",
                 "score": analysis_scores["ai_presence"],
-                "result": ai_presence_result,
+                "result": analysis_results["ai_presence"].model_dump() if hasattr(analysis_results["ai_presence"], 'model_dump') else analysis_results["ai_presence"],
                 "completed": True
             },
             {

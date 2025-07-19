@@ -251,45 +251,54 @@ class AiPresenceAnalyzer(BaseAnalyzer):
             llm_responses = await self._query_llms(company_facts)
         print(json.dumps(llm_responses, indent=4))
         
-        # 2. Score each response
+        # 2. Score each response and calculate provider scores
         provider_results = {}
-        all_scores = []
+        provider_scores = {}
         
         for provider, model_responses in llm_responses.items():
             if isinstance(model_responses, dict):
                 provider_model_results = {}
+                provider_model_scores = []
+                
                 for model_field, response in model_responses.items():
                     if isinstance(response, str) and not response.startswith("Error:") and response != "API key not configured":
                         score, detail = self._score_llm_response(company_facts, response)
                         detail['score'] = score
                         provider_model_results[model_field] = AIPresenceModelResults(**detail)
-                        all_scores.append(score)
+                        provider_model_scores.append(score)
                     else:
                         # Handle errors or missing API keys
                         provider_model_results[model_field] = None
                 
                 provider_results[provider] = provider_model_results
+                
+                # Calculate provider average score if any models succeeded
+                if provider_model_scores:
+                    provider_avg = sum(provider_model_scores) / len(provider_model_scores)
+                    provider_scores[provider] = provider_avg
+                else:
+                    provider_scores[provider] = 0.0
         
-        # 3. Calculate aggregate score
-        avg_score = sum(all_scores) / len(all_scores) if all_scores else 0.0
+        # 3. Calculate overall score as average of provider scores
+        avg_score = sum(provider_scores.values()) / len(provider_scores) if provider_scores else 0.0
         
-        # 4. Create provider-specific result objects with scores
+        # 4. Create provider-specific result objects with pre-calculated scores
         final_result = AIPresenceResult(
             openai=AIPresenceOpenAIResults(
                 **provider_results.get("openai", {}),
-                score=sum(result.score for result in provider_results.get("openai", {}).values() if isinstance(result, AIPresenceModelResults)) / len([r for r in provider_results.get("openai", {}).values() if isinstance(r, AIPresenceModelResults)]) if provider_results.get("openai") and any(isinstance(r, AIPresenceModelResults) for r in provider_results.get("openai", {}).values()) else 0.0
+                score=provider_scores.get("openai", 0.0)
             ) if provider_results.get("openai") else None,
             anthropic=AIPresenceAnthropicResults(
                 **provider_results.get("anthropic", {}),
-                score=sum(result.score for result in provider_results.get("anthropic", {}).values() if isinstance(result, AIPresenceModelResults)) / len([r for r in provider_results.get("anthropic", {}).values() if isinstance(r, AIPresenceModelResults)]) if provider_results.get("anthropic") and any(isinstance(r, AIPresenceModelResults) for r in provider_results.get("anthropic", {}).values()) else 0.0
+                score=provider_scores.get("anthropic", 0.0)
             ) if provider_results.get("anthropic") else None,
             gemini=AIPresenceGeminiResults(
                 **provider_results.get("gemini", {}),
-                score=sum(result.score for result in provider_results.get("gemini", {}).values() if isinstance(result, AIPresenceModelResults)) / len([r for r in provider_results.get("gemini", {}).values() if isinstance(r, AIPresenceModelResults)]) if provider_results.get("gemini") and any(isinstance(r, AIPresenceModelResults) for r in provider_results.get("gemini", {}).values()) else 0.0
+                score=provider_scores.get("gemini", 0.0)
             ) if provider_results.get("gemini") else None,
             perplexity=AIPresencePerplexityResults(
                 **provider_results.get("perplexity", {}),
-                score=sum(result.score for result in provider_results.get("perplexity", {}).values() if isinstance(result, AIPresenceModelResults)) / len([r for r in provider_results.get("perplexity", {}).values() if isinstance(r, AIPresenceModelResults)]) if provider_results.get("perplexity") and any(isinstance(r, AIPresenceModelResults) for r in provider_results.get("perplexity", {}).values()) else 0.0
+                score=provider_scores.get("perplexity", 0.0)
             ) if provider_results.get("perplexity") else None,
             score=avg_score
         )

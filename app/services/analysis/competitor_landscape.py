@@ -324,19 +324,20 @@ class CompetitorLandscapeAnalyzer(BaseAnalyzer):
             if competitor.lower() == normalized_company_name or normalized_company_name in competitor.lower():
                 included = True
                 # Position-based scoring (0-indexed, so add 1 for actual position)
+                # Scaled up so max score is 100 per model
                 actual_position = position + 1
                 if actual_position == 1:
-                    score = 25
+                    score = 100
                 elif actual_position == 2:
-                    score = 20
+                    score = 80
                 elif actual_position == 3:
-                    score = 15
+                    score = 60
                 elif actual_position == 4:
-                    score = 10
+                    score = 40
                 elif actual_position == 5:
-                    score = 5
+                    score = 20
                 else:
-                    score = 2  # Some points for being mentioned even if not in top 5
+                    score = 10  # Some points for being mentioned even if not in top 5
                 break
         
         return score, included
@@ -408,26 +409,39 @@ class CompetitorLandscapeAnalyzer(BaseAnalyzer):
                 
                 provider_results[provider] = provider_model_results
 
-        # Use total score (sum) instead of average
-        final_score = total_score
+        # Use average of provider scores instead of sum of model scores
+        provider_scores = {}
+        for provider, model_results in provider_results.items():
+            if model_results:
+                # Get all valid model scores for this provider
+                model_scores = [result.score for result in model_results.values() if isinstance(result, LLMCompetitorResult)]
+                if model_scores:
+                    provider_avg = sum(model_scores) / len(model_scores)
+                    provider_scores[provider] = provider_avg
+                else:
+                    provider_scores[provider] = 0.0
+            else:
+                provider_scores[provider] = 0.0
+        
+        final_score = sum(provider_scores.values()) / len(provider_scores) if provider_scores else 0.0
 
-        # Create final result with provider-specific result objects
+        # Create final result with provider-specific result objects using pre-calculated scores
         final_result = CompetitorLandscapeResult(
             openai=CompetitorLandscapeOpenAIResults(
                 **provider_results.get("openai", {}),
-                score=sum(result.score for result in provider_results.get("openai", {}).values() if isinstance(result, LLMCompetitorResult)) / len([r for r in provider_results.get("openai", {}).values() if isinstance(r, LLMCompetitorResult)]) if provider_results.get("openai") and any(isinstance(r, LLMCompetitorResult) for r in provider_results.get("openai", {}).values()) else 0.0
+                score=provider_scores.get("openai", 0.0)
             ) if provider_results.get("openai") else None,
             anthropic=CompetitorLandscapeAnthropicResults(
                 **provider_results.get("anthropic", {}),
-                score=sum(result.score for result in provider_results.get("anthropic", {}).values() if isinstance(result, LLMCompetitorResult)) / len([r for r in provider_results.get("anthropic", {}).values() if isinstance(r, LLMCompetitorResult)]) if provider_results.get("anthropic") and any(isinstance(r, LLMCompetitorResult) for r in provider_results.get("anthropic", {}).values()) else 0.0
+                score=provider_scores.get("anthropic", 0.0)
             ) if provider_results.get("anthropic") else None,
             gemini=CompetitorLandscapeGeminiResults(
                 **provider_results.get("gemini", {}),
-                score=sum(result.score for result in provider_results.get("gemini", {}).values() if isinstance(result, LLMCompetitorResult)) / len([r for r in provider_results.get("gemini", {}).values() if isinstance(r, LLMCompetitorResult)]) if provider_results.get("gemini") and any(isinstance(r, LLMCompetitorResult) for r in provider_results.get("gemini", {}).values()) else 0.0
+                score=provider_scores.get("gemini", 0.0)
             ) if provider_results.get("gemini") else None,
             perplexity=CompetitorLandscapePerplexityResults(
                 **provider_results.get("perplexity", {}),
-                score=sum(result.score for result in provider_results.get("perplexity", {}).values() if isinstance(result, LLMCompetitorResult)) / len([r for r in provider_results.get("perplexity", {}).values() if isinstance(r, LLMCompetitorResult)]) if provider_results.get("perplexity") and any(isinstance(r, LLMCompetitorResult) for r in provider_results.get("perplexity", {}).values()) else 0.0
+                score=provider_scores.get("perplexity", 0.0)
             ) if provider_results.get("perplexity") else None,
             score=final_score
         )
