@@ -13,7 +13,16 @@ from urllib.parse import urljoin, urlparse
 
 from app.services.analysis.base import BaseAnalyzer
 from app.core.config import settings
+from app.core.constants import PROVIDER_MODELS, MODEL_FIELD_MAPPING
 from app.services.analysis.utils.llm_utils import query_openai, query_anthropic, query_gemini, query_perplexity
+from app.schemas.analysis import (
+    AIPresenceResult, 
+    AIPresenceOpenAIResults, 
+    AIPresenceAnthropicResults, 
+    AIPresenceGeminiResults, 
+    AIPresencePerplexityResults,
+    AIPresenceModelResults
+)
 
 class AiPresenceAnalyzer(BaseAnalyzer):
     """Analyzer for checking AI presence of a company (how well AI models know about it)."""
@@ -30,43 +39,68 @@ class AiPresenceAnalyzer(BaseAnalyzer):
         
         responses = {}
         tasks = []
+        task_info = []  # Track provider and model for each task
         
+        # OpenAI models
         if settings.OPENAI_API_KEY:
-          tasks.append(query_openai(prompt))
+            for model in PROVIDER_MODELS["openai"]:
+                tasks.append(query_openai(prompt, model))
+                task_info.append(("openai", model))
         else:
-          responses["openai"] = "API key not configured"
-            
+            responses["openai"] = {}
+            for model in PROVIDER_MODELS["openai"]:
+                field_name = MODEL_FIELD_MAPPING[model]
+                responses["openai"][field_name] = "API key not configured"
+        
+        # Anthropic models
         if settings.ANTHROPIC_API_KEY:
-          tasks.append(query_anthropic(prompt))
+            for model in PROVIDER_MODELS["anthropic"]:
+                tasks.append(query_anthropic(prompt, model))
+                task_info.append(("anthropic", model))
         else:
-          responses["anthropic"] = "API key not configured"
-            
+            responses["anthropic"] = {}
+            for model in PROVIDER_MODELS["anthropic"]:
+                field_name = MODEL_FIELD_MAPPING[model]
+                responses["anthropic"][field_name] = "API key not configured"
+        
+        # Gemini models
         if settings.GEMINI_API_KEY:
-          tasks.append(query_gemini(prompt))
+            for model in PROVIDER_MODELS["gemini"]:
+                tasks.append(query_gemini(prompt, model))
+                task_info.append(("gemini", model))
         else:
-          responses["gemini"] = "API key not configured"
+            responses["gemini"] = {}
+            for model in PROVIDER_MODELS["gemini"]:
+                field_name = MODEL_FIELD_MAPPING[model]
+                responses["gemini"][field_name] = "API key not configured"
         
+        # Perplexity models
         if settings.PERPLEXITY_API_KEY:
-          tasks.append(query_perplexity(prompt))
+            for model in PROVIDER_MODELS["perplexity"]:
+                tasks.append(query_perplexity(prompt, model))
+                task_info.append(("perplexity", model))
         else:
-          responses["perplexity"] = "API key not configured"
+            responses["perplexity"] = {}
+            for model in PROVIDER_MODELS["perplexity"]:
+                field_name = MODEL_FIELD_MAPPING[model]
+                responses["perplexity"][field_name] = "API key not configured"
         
+        # Execute all tasks
         if tasks:
-          results = await asyncio.gather(*tasks, return_exceptions=True)
-          
-          for i, result in enumerate(results):
-            if isinstance(result, Exception):
-              if i == 0 and "openai" not in responses:
-                responses["openai"] = f"Error: {str(result)}"
-              elif i == 1 and "anthropic" not in responses:
-                responses["anthropic"] = f"Error: {str(result)}"
-              elif i == 2 and "gemini" not in responses:
-                responses["gemini"] = f"Error: {str(result)}"
-              elif i == 3 and "perplexity" not in responses:
-                responses["perplexity"] = f"Error: {str(result)}"
-            else:
-              model_name, response_text = result
-              responses[model_name] = response_text
+            results = await asyncio.gather(*tasks, return_exceptions=True)
+            
+            for i, result in enumerate(results):
+                provider, model = task_info[i]
+                field_name = MODEL_FIELD_MAPPING[model]
+                
+                if provider not in responses:
+                    responses[provider] = {}
+                
+                if isinstance(result, Exception):
+                    responses[provider][field_name] = f"Error: {str(result)}"
+                else:
+                    returned_model, response_text = result
+                    responses[provider][field_name] = response_text
         
         return responses
     
@@ -195,35 +229,69 @@ class AiPresenceAnalyzer(BaseAnalyzer):
         # 1. Query LLMs
         llm_responses = {}
         if "aeo checker" in company_facts["name"].lower():
-          print("AEO Checker detected, using hardcoded responses")
-          llm_responses = {
-            "openai": "AEO Checker, Answer Engine Optimization",
-            "anthropic": "AEO Checker",
-            "gemini": "AEO Checker, Answer Engine Optimization",
-            "perplexity": "AEO Checker, Answer Engine Optimization",
-          }
+            print("AEO Checker detected, using hardcoded responses")
+            llm_responses = {
+                "openai": {
+                    "gpt_4_1_mini": "AEO Checker, Answer Engine Optimization",
+                    "gpt_4o_mini": "AEO Checker, Answer Engine Optimization"
+                },
+                "anthropic": {
+                    "claude_3_5_haiku_20241022": "AEO Checker",
+                    "claude_sonnet_4_20250514": "AEO Checker"
+                },
+                "gemini": {
+                    "gemini_2_5_flash": "AEO Checker, Answer Engine Optimization",
+                    "gemini_2_0_flash": "AEO Checker, Answer Engine Optimization"
+                },
+                "perplexity": {
+                    "perplexity": "AEO Checker, Answer Engine Optimization"
+                }
+            }
         else:
-          llm_responses = await self._query_llms(company_facts)
+            llm_responses = await self._query_llms(company_facts)
         print(json.dumps(llm_responses, indent=4))
+        
         # 2. Score each response
-        scores = {}
-        details = {}
-        for model, response in llm_responses.items():
-            score, detail = self._score_llm_response(company_facts, response)
-            scores[model] = score
-            details[model] = detail
-        # 3. Aggregate
-        avg_score = sum(scores.values()) / len(scores) if scores else 0.0
+        provider_results = {}
+        all_scores = []
         
-        # Create object-based result structure
-        analysis_result = {}
+        for provider, model_responses in llm_responses.items():
+            if isinstance(model_responses, dict):
+                provider_model_results = {}
+                for model_field, response in model_responses.items():
+                    if isinstance(response, str) and not response.startswith("Error:") and response != "API key not configured":
+                        score, detail = self._score_llm_response(company_facts, response)
+                        detail['score'] = score
+                        provider_model_results[model_field] = AIPresenceModelResults(**detail)
+                        all_scores.append(score)
+                    else:
+                        # Handle errors or missing API keys
+                        provider_model_results[model_field] = None
+                
+                provider_results[provider] = provider_model_results
         
-        for model in scores.keys():
-            # For each model, add its details and score
-            if model not in analysis_result:
-                analysis_result[model] = {}
-            
-            analysis_result[model].update(details[model])
-            analysis_result[model]['score'] = scores[model]
-
-        return avg_score, analysis_result
+        # 3. Calculate aggregate score
+        avg_score = sum(all_scores) / len(all_scores) if all_scores else 0.0
+        
+        # 4. Create provider-specific result objects with scores
+        final_result = AIPresenceResult(
+            openai=AIPresenceOpenAIResults(
+                **provider_results.get("openai", {}),
+                score=sum(result.score for result in provider_results.get("openai", {}).values() if isinstance(result, AIPresenceModelResults)) / len([r for r in provider_results.get("openai", {}).values() if isinstance(r, AIPresenceModelResults)]) if provider_results.get("openai") and any(isinstance(r, AIPresenceModelResults) for r in provider_results.get("openai", {}).values()) else 0.0
+            ) if provider_results.get("openai") else None,
+            anthropic=AIPresenceAnthropicResults(
+                **provider_results.get("anthropic", {}),
+                score=sum(result.score for result in provider_results.get("anthropic", {}).values() if isinstance(result, AIPresenceModelResults)) / len([r for r in provider_results.get("anthropic", {}).values() if isinstance(r, AIPresenceModelResults)]) if provider_results.get("anthropic") and any(isinstance(r, AIPresenceModelResults) for r in provider_results.get("anthropic", {}).values()) else 0.0
+            ) if provider_results.get("anthropic") else None,
+            gemini=AIPresenceGeminiResults(
+                **provider_results.get("gemini", {}),
+                score=sum(result.score for result in provider_results.get("gemini", {}).values() if isinstance(result, AIPresenceModelResults)) / len([r for r in provider_results.get("gemini", {}).values() if isinstance(r, AIPresenceModelResults)]) if provider_results.get("gemini") and any(isinstance(r, AIPresenceModelResults) for r in provider_results.get("gemini", {}).values()) else 0.0
+            ) if provider_results.get("gemini") else None,
+            perplexity=AIPresencePerplexityResults(
+                **provider_results.get("perplexity", {}),
+                score=sum(result.score for result in provider_results.get("perplexity", {}).values() if isinstance(result, AIPresenceModelResults)) / len([r for r in provider_results.get("perplexity", {}).values() if isinstance(r, AIPresenceModelResults)]) if provider_results.get("perplexity") and any(isinstance(r, AIPresenceModelResults) for r in provider_results.get("perplexity", {}).values()) else 0.0
+            ) if provider_results.get("perplexity") else None,
+            score=avg_score
+        )
+        
+        return avg_score, final_result

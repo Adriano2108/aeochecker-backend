@@ -5,12 +5,20 @@ This module contains functionality to analyze the competitive landscape for a co
 
 from app.services.analysis.base import BaseAnalyzer
 from app.core.config import settings
+from app.core.constants import PROVIDER_MODELS, MODEL_FIELD_MAPPING
 import asyncio
 import ast
 from app.services.analysis.utils.llm_utils import query_openai, query_anthropic, query_gemini, query_perplexity
 from collections import Counter
 import re
-from app.schemas.analysis import CompetitorLandscapeResult, LLMCompetitorResult
+from app.schemas.analysis import (
+    CompetitorLandscapeResult, 
+    LLMCompetitorResult,
+    CompetitorLandscapeOpenAIResults,
+    CompetitorLandscapeAnthropicResults,
+    CompetitorLandscapeGeminiResults,
+    CompetitorLandscapePerplexityResults
+)
 import json
 
 class CompetitorLandscapeAnalyzer(BaseAnalyzer):
@@ -20,7 +28,7 @@ class CompetitorLandscapeAnalyzer(BaseAnalyzer):
     async def _query_llms_competitors(company_facts: dict) -> dict:
         """
         Query multiple LLMs for the top 3 competitors in the given industry/product.
-        Returns a dict of model_name -> list of competitors (or error string).
+        Returns a dict of provider -> model -> list of competitors (or error string).
         """
         industry = company_facts.get("industry", "") or ""
         products = company_facts.get("key_products_services", [])
@@ -50,41 +58,72 @@ class CompetitorLandscapeAnalyzer(BaseAnalyzer):
             return {}
 
         tasks = []
+        task_info = []  # Track provider and model for each task
+        
+        # OpenAI models
         if settings.OPENAI_API_KEY:
-            tasks.append(query_openai(prompt))
+            for model in PROVIDER_MODELS["openai"]:
+                tasks.append(query_openai(prompt, model))
+                task_info.append(("openai", model))
         else:
             print("OpenAI API key not configured")
-            responses["openai"] = "API key not configured"
+            responses["openai"] = {}
+            for model in PROVIDER_MODELS["openai"]:
+                field_name = MODEL_FIELD_MAPPING[model]
+                responses["openai"][field_name] = "API key not configured"
+        
+        # Anthropic models
         if settings.ANTHROPIC_API_KEY:
-            tasks.append(query_anthropic(prompt))
+            for model in PROVIDER_MODELS["anthropic"]:
+                tasks.append(query_anthropic(prompt, model))
+                task_info.append(("anthropic", model))
         else:
             print("Anthropic API key not configured")
-            responses["anthropic"] = "API key not configured"
+            responses["anthropic"] = {}
+            for model in PROVIDER_MODELS["anthropic"]:
+                field_name = MODEL_FIELD_MAPPING[model]
+                responses["anthropic"][field_name] = "API key not configured"
+        
+        # Gemini models
         if settings.GEMINI_API_KEY:
-            tasks.append(query_gemini(prompt))
+            for model in PROVIDER_MODELS["gemini"]:
+                tasks.append(query_gemini(prompt, model))
+                task_info.append(("gemini", model))
         else:
             print("Gemini API key not configured")
-            responses["gemini"] = "API key not configured"
+            responses["gemini"] = {}
+            for model in PROVIDER_MODELS["gemini"]:
+                field_name = MODEL_FIELD_MAPPING[model]
+                responses["gemini"][field_name] = "API key not configured"
+        
+        # Perplexity models
         if settings.PERPLEXITY_API_KEY:
-            tasks.append(query_perplexity(prompt))
+            for model in PROVIDER_MODELS["perplexity"]:
+                tasks.append(query_perplexity(prompt, model))
+                task_info.append(("perplexity", model))
         else:
             print("Perplexity API key not configured")
-            responses["perplexity"] = "API key not configured"
+            responses["perplexity"] = {}
+            for model in PROVIDER_MODELS["perplexity"]:
+                field_name = MODEL_FIELD_MAPPING[model]
+                responses["perplexity"][field_name] = "API key not configured"
+        
+        # Execute all tasks
         if tasks:
             results = await asyncio.gather(*tasks, return_exceptions=True)
             for i, result in enumerate(results):
+                provider, model = task_info[i]
+                field_name = MODEL_FIELD_MAPPING[model]
+                
+                if provider not in responses:
+                    responses[provider] = {}
+                
                 if isinstance(result, Exception):
-                    if i == 0 and "openai" not in responses:
-                        responses["openai"] = f"Error: {str(result)}"
-                    elif i == 1 and "anthropic" not in responses:
-                        responses["anthropic"] = f"Error: {str(result)}"
-                    elif i == 2 and "gemini" not in responses:
-                        responses["gemini"] = f"Error: {str(result)}"
-                    elif i == 3 and "perplexity" not in responses:
-                        responses["perplexity"] = f"Error: {str(result)}"
+                    responses[provider][field_name] = f"Error: {str(result)}"
                 else:
-                    model_name, response_text = result
-                    responses[model_name] = response_text
+                    returned_model, response_text = result
+                    responses[provider][field_name] = response_text
+        
         return responses
 
     @staticmethod
@@ -330,7 +369,7 @@ class CompetitorLandscapeAnalyzer(BaseAnalyzer):
     async def analyze(self, company_facts: dict) -> tuple:
         """
         Analyze the competitive landscape for a company website.
-        Now processes each LLM response individually.
+        Now processes each LLM response individually with provider-model structure.
         """
         # 1. Query LLMs for competitors
         llm_responses = await self._query_llms_competitors(company_facts)
@@ -338,41 +377,59 @@ class CompetitorLandscapeAnalyzer(BaseAnalyzer):
         print(json.dumps(llm_responses, indent=4))
 
         # 2. Process each LLM response individually
-        competitor_results = {}
+        provider_results = {}
         total_score = 0
         valid_responses = 0
 
-        # Add "AEO Checker" to top of each model's competitors if company is "aeo checker"
+        # Check if this is AEO Checker for special handling
         company_name = company_facts.get("name", "").lower()
         is_aeo_checker = company_name == "aeo checker"
 
-        for model_name, response in llm_responses.items():
-            if isinstance(response, str) and not response.startswith("Error:") and not response.startswith("API key not configured"):
-                score, llm_result = self._analyze_single_llm_response(response, company_facts)
+        for provider, model_responses in llm_responses.items():
+            if isinstance(model_responses, dict):
+                provider_model_results = {}
+                for model_field, response in model_responses.items():
+                    if isinstance(response, str) and not response.startswith("Error:") and response != "API key not configured":
+                        score, llm_result = self._analyze_single_llm_response(response, company_facts)
+                        
+                        # If this is AEO Checker, add it to the top of the competitor list
+                        if is_aeo_checker and llm_result.competitors:
+                            llm_result.competitors.insert(0, "AEO Checker")
+                            # Recalculate score since AEO Checker is now at position 1
+                            llm_result.score = 25
+                            llm_result.included = True
+                        
+                        provider_model_results[model_field] = llm_result
+                        total_score += llm_result.score
+                        valid_responses += 1
+                    else:
+                        # For errors or missing API keys, set to None
+                        provider_model_results[model_field] = None
                 
-                # If this is AEO Checker, add it to the top of the competitor list
-                if is_aeo_checker and llm_result.competitors:
-                    llm_result.competitors.insert(0, "AEO Checker")
-                    # Recalculate score since AEO Checker is now at position 1
-                    llm_result.score = 25
-                    llm_result.included = True
-                
-                competitor_results[model_name] = llm_result
-                total_score += llm_result.score  # Use the updated score
-                valid_responses += 1
-            else:
-                # For errors or missing API keys, set to None
-                competitor_results[model_name] = None
+                provider_results[provider] = provider_model_results
 
         # Use total score (sum) instead of average
         final_score = total_score
 
-        # Create final result with individual LLM results
+        # Create final result with provider-specific result objects
         final_result = CompetitorLandscapeResult(
-            openai=competitor_results.get("openai"),
-            anthropic=competitor_results.get("anthropic"),
-            gemini=competitor_results.get("gemini"),
-            perplexity=competitor_results.get("perplexity")
+            openai=CompetitorLandscapeOpenAIResults(
+                **provider_results.get("openai", {}),
+                score=sum(result.score for result in provider_results.get("openai", {}).values() if isinstance(result, LLMCompetitorResult)) / len([r for r in provider_results.get("openai", {}).values() if isinstance(r, LLMCompetitorResult)]) if provider_results.get("openai") and any(isinstance(r, LLMCompetitorResult) for r in provider_results.get("openai", {}).values()) else 0.0
+            ) if provider_results.get("openai") else None,
+            anthropic=CompetitorLandscapeAnthropicResults(
+                **provider_results.get("anthropic", {}),
+                score=sum(result.score for result in provider_results.get("anthropic", {}).values() if isinstance(result, LLMCompetitorResult)) / len([r for r in provider_results.get("anthropic", {}).values() if isinstance(r, LLMCompetitorResult)]) if provider_results.get("anthropic") and any(isinstance(r, LLMCompetitorResult) for r in provider_results.get("anthropic", {}).values()) else 0.0
+            ) if provider_results.get("anthropic") else None,
+            gemini=CompetitorLandscapeGeminiResults(
+                **provider_results.get("gemini", {}),
+                score=sum(result.score for result in provider_results.get("gemini", {}).values() if isinstance(result, LLMCompetitorResult)) / len([r for r in provider_results.get("gemini", {}).values() if isinstance(r, LLMCompetitorResult)]) if provider_results.get("gemini") and any(isinstance(r, LLMCompetitorResult) for r in provider_results.get("gemini", {}).values()) else 0.0
+            ) if provider_results.get("gemini") else None,
+            perplexity=CompetitorLandscapePerplexityResults(
+                **provider_results.get("perplexity", {}),
+                score=sum(result.score for result in provider_results.get("perplexity", {}).values() if isinstance(result, LLMCompetitorResult)) / len([r for r in provider_results.get("perplexity", {}).values() if isinstance(r, LLMCompetitorResult)]) if provider_results.get("perplexity") and any(isinstance(r, LLMCompetitorResult) for r in provider_results.get("perplexity", {}).values()) else 0.0
+            ) if provider_results.get("perplexity") else None,
+            score=final_score
         )
 
         return final_score, final_result

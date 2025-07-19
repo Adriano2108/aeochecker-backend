@@ -15,11 +15,31 @@ class AIPresenceModelResults(CamelCaseModel):
     uncertainty: bool
     score: float
 
-class AIPresenceResult(CamelCaseModel):
-    openai: Optional[AIPresenceModelResults] = None
-    anthropic: Optional[AIPresenceModelResults] = None
-    gemini: Optional[AIPresenceModelResults] = None
+# Provider-specific AI Presence results
+class AIPresenceOpenAIResults(CamelCaseModel):
+    gpt_4_1_mini: Optional[AIPresenceModelResults] = None
+    gpt_4o_mini: Optional[AIPresenceModelResults] = None
+    score: float
+
+class AIPresenceAnthropicResults(CamelCaseModel):
+    claude_3_5_haiku_20241022: Optional[AIPresenceModelResults] = None
+    claude_sonnet_4_20250514: Optional[AIPresenceModelResults] = None
+    score: float
+
+class AIPresenceGeminiResults(CamelCaseModel):
+    gemini_2_5_flash_lite_preview_06_17: Optional[AIPresenceModelResults] = None
+    gemini_2_0_flash: Optional[AIPresenceModelResults] = None
+    score: float
+
+class AIPresencePerplexityResults(CamelCaseModel):
     perplexity: Optional[AIPresenceModelResults] = None
+    score: float
+
+class AIPresenceResult(CamelCaseModel):
+    openai: Optional[AIPresenceOpenAIResults] = None
+    anthropic: Optional[AIPresenceAnthropicResults] = None
+    gemini: Optional[AIPresenceGeminiResults] = None
+    perplexity: Optional[AIPresencePerplexityResults] = None
     score: float
 
 
@@ -29,12 +49,32 @@ class LLMCompetitorResult(CamelCaseModel):
     included: bool
     score: float
 
-class CompetitorLandscapeResult(CamelCaseModel):
-    openai: Optional[LLMCompetitorResult] = None
-    anthropic: Optional[LLMCompetitorResult] = None
-    gemini: Optional[LLMCompetitorResult] = None
-    perplexity: Optional[LLMCompetitorResult] = None
+# Provider-specific Competitor Landscape results  
+class CompetitorLandscapeOpenAIResults(CamelCaseModel):
+    gpt_4_1_mini: Optional[LLMCompetitorResult] = None
+    gpt_4o_mini: Optional[LLMCompetitorResult] = None
+    score: float
 
+class CompetitorLandscapeAnthropicResults(CamelCaseModel):
+    claude_3_5_haiku_20241022: Optional[LLMCompetitorResult] = None
+    claude_sonnet_4_20250514: Optional[LLMCompetitorResult] = None
+    score: float
+
+class CompetitorLandscapeGeminiResults(CamelCaseModel):
+    gemini_2_0_flash: Optional[LLMCompetitorResult] = None
+    gemini_2_5_flash_lite_preview_06_17: Optional[LLMCompetitorResult] = None
+    score: float
+
+class CompetitorLandscapePerplexityResults(CamelCaseModel):
+    perplexity: Optional[LLMCompetitorResult] = None
+    score: float
+
+class CompetitorLandscapeResult(CamelCaseModel):
+    openai: Optional[CompetitorLandscapeOpenAIResults] = None
+    anthropic: Optional[CompetitorLandscapeAnthropicResults] = None
+    gemini: Optional[CompetitorLandscapeGeminiResults] = None
+    perplexity: Optional[CompetitorLandscapePerplexityResults] = None
+    score: float
 
 # Strategy Review Analysis Models
 class AnswerabilityResult(CamelCaseModel):
@@ -200,11 +240,13 @@ class AnalysisResult(CamelCaseModel):
                         "completed": True,
                         "result": {
                             "openai": {
-                                "industry": True,
-                                "name": True,
-                                "product": False,
-                                "uncertainty": False,
-                                "score": 80.0
+                                "gpt41Mini202504214": {
+                                    "industry": True,
+                                    "name": True,
+                                    "product": False,
+                                    "uncertainty": False,
+                                    "score": 80.0
+                                }
                             },
                             "score": 75.0
                         }
@@ -216,9 +258,11 @@ class AnalysisResult(CamelCaseModel):
                         "completed": True,
                         "result": {
                             "openai": {
-                                "competitors": ["Company A", "Company B"],
-                                "included": True,
-                                "score": 90.0
+                                "gpt41Mini202504214": {
+                                    "competitors": ["Company A", "Company B"],
+                                    "included": True,
+                                    "score": 90.0
+                                }
                             }
                         }
                     },
