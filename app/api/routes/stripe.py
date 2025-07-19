@@ -3,7 +3,7 @@ from pydantic import BaseModel, Field
 from typing import Literal, Optional
 from app.api.deps import get_current_user
 
-from app.services import stripe_service
+from app.services import StripeService
 
 # Router for authenticated Stripe endpoints
 router = APIRouter(
@@ -39,7 +39,7 @@ async def create_checkout_session_endpoint(request_data: CheckoutSessionRequest,
         raise HTTPException(status_code=400, detail="User email not found in token.")
 
     try:
-        session = await stripe_service.create_checkout_session(request_data.tier_id, user["uid"], user_email)
+        session = await StripeService.create_checkout_session(request_data.tier_id, user["uid"], user_email)
         return session
     except HTTPException as e:
         raise e
@@ -58,7 +58,7 @@ async def create_portal_session_endpoint(user=Depends(get_current_user)):
         raise HTTPException(status_code=400, detail="User email not found in token.")
 
     try:
-        portal_session = await stripe_service.create_portal_session(user["uid"])
+        portal_session = await StripeService.create_portal_session(user["uid"])
         return {"url": portal_session.url}
     except HTTPException as e:
         raise e
@@ -76,7 +76,7 @@ async def stripe_webhook_endpoint(request: Request):
     """
     stripe_signature = request.headers.get("Stripe-Signature")
     try:
-        return await stripe_service.handle_stripe_webhook(request, stripe_signature)
+        return await StripeService.handle_stripe_webhook(request, stripe_signature)
     except HTTPException as e:
         raise e
     except Exception as e:

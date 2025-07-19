@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException, status, BackgroundTasks
 from app.schemas.analysis import AnalyzeRequest, AnalysisStatus, AnalysisResult, ShareLink
 from app.api.deps import get_current_user, get_current_user_optional, check_user_credits
-from app.services import AnalysisService
+from app.services import AnalysisService, ReportService
 from typing import Dict, Any, Optional
 from app.core.constants import AnalysisStatus as AnalysisStatusConstants
 
@@ -59,7 +59,7 @@ async def get_report(job_id: str, user=Depends(get_current_user)):
     """
     Get a complete analysis report
     """
-    report_data = await AnalysisService.get_job_report(job_id, user["uid"])
+    report_data = await ReportService.get_job_report(job_id, user["uid"])
     
     if report_data.get("status") == AnalysisStatusConstants.NOT_FOUND:
         raise HTTPException(
@@ -86,7 +86,7 @@ async def share_report(job_id: str, user=Depends(get_current_user)):
     """
     Create a shareable link for a completed analysis report
     """
-    result = await AnalysisService.create_share_link(job_id, user["uid"])
+    result = await ReportService.create_share_link(job_id, user["uid"])
     
     if result.get("status") == "forbidden":
         raise HTTPException(
@@ -101,7 +101,7 @@ async def delete_report(job_id: str, user=Depends(get_current_user)):
     """
     Soft delete an analysis report. Only the report owner can delete their report.
     """
-    result = await AnalysisService.delete_report(job_id, user["uid"])
+    result = await ReportService.delete_report(job_id, user["uid"])
     
     if result.get("status") == "not_found":
         raise HTTPException(
@@ -125,7 +125,7 @@ async def get_public_report(share_token: str, user: Optional[dict] = Depends(get
     If user is authenticated and persistent, returns full report.
     Otherwise returns dummy report.
     """
-    report_data = await AnalysisService.get_public_report(share_token, user)
+    report_data = await ReportService.get_public_report(share_token, user)
     
     if report_data.get("status") == AnalysisStatusConstants.NOT_FOUND:
         raise HTTPException(

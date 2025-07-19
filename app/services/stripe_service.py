@@ -17,178 +17,145 @@ TRIAL_PERIOD_DAYS = {
     "developer": 7,
 }
 
-async def create_checkout_session(product_id: str, user_id: str, user_email: str):
-    """
-    Creates a Stripe Checkout Session for the given product_id.
-    product_id can be 'starter' or 'developer'.
-    """
+class StripeService:
+    """Service for handling Stripe operations."""
 
-    print(f"Checkout function called with product_id: {product_id}, user_id: {user_id}, user_email: {user_email}")
-    if product_id not in PRODUCT_TO_PRICE_MAP:
-        raise HTTPException(status_code=400, detail="Invalid product ID")
-    
-    try:
-        StatsService.increment_checkout_created_count(product_id)
-    except Exception as e:
-        print(f"Failed to log checkout creation for product {product_id}: {e}")
+    @staticmethod
+    async def create_checkout_session(product_id: str, user_id: str, user_email: str):
+        """
+        Creates a Stripe Checkout Session for the given product_id.
+        product_id can be 'starter' or 'developer'.
+        """
 
-    price_id = PRODUCT_TO_PRICE_MAP[product_id]
-    trial_days = TRIAL_PERIOD_DAYS[product_id]
-    
-    try:
-        checkout_session = stripe.checkout.Session.create(
-            payment_method_types=['card'],
-            line_items=[
-                {
-                    'price': price_id,
-                    'quantity': 1,
-                },
-            ],
-            mode='subscription',
-            success_url=f"{settings.FRONTEND_URL}/payment/success?session_id={{CHECKOUT_SESSION_ID}}",
-            cancel_url=settings.FRONTEND_URL,
-            customer_email = user_email,
-            metadata={
-                "user_id": user_id,
-                "plan_name": product_id
-            },
-            subscription_data={
-                "trial_period_days": trial_days,
-                "metadata": {
+        print(f"Checkout function called with product_id: {product_id}, user_id: {user_id}, user_email: {user_email}")
+        if product_id not in PRODUCT_TO_PRICE_MAP:
+            raise HTTPException(status_code=400, detail="Invalid product ID")
+        
+        try:
+            StatsService.increment_checkout_created_count(product_id)
+        except Exception as e:
+            print(f"Failed to log checkout creation for product {product_id}: {e}")
+
+        price_id = PRODUCT_TO_PRICE_MAP[product_id]
+        trial_days = TRIAL_PERIOD_DAYS[product_id]
+        
+        try:
+            checkout_session = stripe.checkout.Session.create(
+                payment_method_types=['card'],
+                line_items=[
+                    {
+                        'price': price_id,
+                        'quantity': 1,
+                    },
+                ],
+                mode='subscription',
+                success_url=f"{settings.FRONTEND_URL}/payment/success?session_id={{CHECKOUT_SESSION_ID}}",
+                cancel_url=settings.FRONTEND_URL,
+                customer_email = user_email,
+                metadata={
                     "user_id": user_id,
                     "plan_name": product_id
+                },
+                subscription_data={
+                    "trial_period_days": trial_days,
+                    "metadata": {
+                        "user_id": user_id,
+                        "plan_name": product_id
+                    }
                 }
-            }
-        )
-        return {"sessionId": checkout_session.id, "url": checkout_session.url}
-    except Exception as e:
-        print(f"Error creating Stripe checkout session: {e}")
-        import traceback
-        traceback.print_exc()
-        raise HTTPException(status_code=500, detail=str(e))
+            )
+            return {"sessionId": checkout_session.id, "url": checkout_session.url}
+        except Exception as e:
+            print(f"Error creating Stripe checkout session: {e}")
+            import traceback
+            traceback.print_exc()
+            raise HTTPException(status_code=500, detail=str(e))
 
-async def create_portal_session(user_id: str):
-    """
-    Creates a Stripe Customer Portal session for subscription management.
-    Requires the user_id to find their Stripe customer ID.
-    """
-    try:
-        user_data = await UserService.get_user_data(user_id)
+    @staticmethod
+    async def create_portal_session(user_id: str):
+        """
+        Creates a Stripe Customer Portal session for subscription management.
+        Requires the user_id to find their Stripe customer ID.
+        """
+        try:
+            user_data = await UserService.get_user_data(user_id)
+            
+            if not user_data or not user_data.get("subscription") or not user_data.get("subscription", {}).get("customer_id"):
+                raise HTTPException(status_code=404, detail="No active subscription found for this user")
+            
+            customer_id = user_data.get("subscription", {}).get("customer_id")
+            
+            portal_session = stripe.billing_portal.Session.create(
+                customer=customer_id,
+                return_url=settings.FRONTEND_URL,
+            )
+            
+            return portal_session
+        except HTTPException as e:
+            raise e
+        except Exception as e:
+            print(f"Error creating Stripe portal session: {e}")
+            import traceback
+            traceback.print_exc()
+            raise HTTPException(status_code=500, detail=str(e))
+
+    @staticmethod
+    async def handle_stripe_webhook(request: Request, stripe_signature: Optional[str]):
+        """
+        Handles incoming Stripe webhooks.
+        Verifies the event signature and processes the event.
+        """
+        if not stripe_signature:
+            raise HTTPException(status_code=400, detail="Missing Stripe-Signature header")
+
+        payload = await request.body()
         
-        if not user_data or not user_data.get("subscription") or not user_data.get("subscription", {}).get("customer_id"):
-            raise HTTPException(status_code=404, detail="No active subscription found for this user")
-        
-        customer_id = user_data.get("subscription", {}).get("customer_id")
-        
-        portal_session = stripe.billing_portal.Session.create(
-            customer=customer_id,
-            return_url=settings.FRONTEND_URL,
-        )
-        
-        return portal_session
-    except HTTPException as e:
-        raise e
-    except Exception as e:
-        print(f"Error creating Stripe portal session: {e}")
-        import traceback
-        traceback.print_exc()
-        raise HTTPException(status_code=500, detail=str(e))
+        try:
+            event = stripe.Webhook.construct_event(
+                payload, stripe_signature, settings.STRIPE_WEBHOOK_SECRET
+            )
+        except ValueError as e:
+            raise HTTPException(status_code=400, detail=f"Invalid payload: {e}")
+        except stripe.error.SignatureVerificationError as e:
+            raise HTTPException(status_code=400, detail=f"Invalid signature: {e}")
 
-async def handle_stripe_webhook(request: Request, stripe_signature: Optional[str]):
-    """
-    Handles incoming Stripe webhooks.
-    Verifies the event signature and processes the event.
-    """
-    if not stripe_signature:
-        raise HTTPException(status_code=400, detail="Missing Stripe-Signature header")
+        # Handle the event
+        if event['type'] == 'checkout.session.completed':
+            session = event['data']['object']
+            metadata = session.get('metadata', {})
+            user_id = metadata.get('user_id')
+            plan_name = metadata.get('plan_name')
+            customer_id = session.get('customer')
+            subscription_id = session.get('subscription')
 
-    payload = await request.body()
-    
-    try:
-        event = stripe.Webhook.construct_event(
-            payload, stripe_signature, settings.STRIPE_WEBHOOK_SECRET
-        )
-    except ValueError as e:
-        raise HTTPException(status_code=400, detail=f"Invalid payload: {e}")
-    except stripe.error.SignatureVerificationError as e:
-        raise HTTPException(status_code=400, detail=f"Invalid signature: {e}")
+            print(f"Checkout session completed for user: {user_id}, plan: {plan_name}")
+            print(f"Customer ID: {customer_id}, Subscription ID: {subscription_id}")
 
-    # Handle the event
-    if event['type'] == 'checkout.session.completed':
-        session = event['data']['object']
-        metadata = session.get('metadata', {})
-        user_id = metadata.get('user_id')
-        plan_name = metadata.get('plan_name')
-        customer_id = session.get('customer')
-        subscription_id = session.get('subscription')
-
-        print(f"Checkout session completed for user: {user_id}, plan: {plan_name}")
-        print(f"Customer ID: {customer_id}, Subscription ID: {subscription_id}")
-
-        if user_id and subscription_id and plan_name and customer_id:
-            if plan_name not in ["starter", "developer"]:
-                print(f"Error: Invalid plan_name '{plan_name}' from session metadata for user {user_id}.")
+            if user_id and subscription_id and plan_name and customer_id:
+                if plan_name not in ["starter", "developer"]:
+                    print(f"Error: Invalid plan_name '{plan_name}' from session metadata for user {user_id}.")
+                else:
+                    await UserService.update_user_subscription_details(user_id, subscription_id, "active", plan_name, customer_id)
             else:
-                await UserService.update_user_subscription_details(user_id, subscription_id, "active", plan_name, customer_id)
-        else:
-            print(f"Error: Missing user_id, subscription_id, plan_name, or customer_id in checkout.session.completed for session {session.get('id')}")
-        
-    elif event['type'] == 'invoice.payment_succeeded':
-        invoice = event['data']['object']
-        print(f"Invoice payment succeeded: {invoice['id']}")
-        
-    elif event['type'] == 'invoice.payment_failed':
-        invoice = event['data']['object']
-        print(f"Invoice payment failed: {invoice['id']}")
+                print(f"Error: Missing user_id, subscription_id, plan_name, or customer_id in checkout.session.completed for session {session.get('id')}")
+            
+        elif event['type'] == 'invoice.payment_succeeded':
+            invoice = event['data']['object']
+            print(f"Invoice payment succeeded: {invoice['id']}")
+            
+        elif event['type'] == 'invoice.payment_failed':
+            invoice = event['data']['object']
+            print(f"Invoice payment failed: {invoice['id']}")
 
-    elif event['type'] == 'customer.subscription.deleted':
-        subscription_obj = event['data']['object']
-        metadata = subscription_obj.get('metadata', {})
-        user_id = metadata.get('user_id')
-        plan_name = metadata.get('plan_name')
-        subscription_id = subscription_obj.get('id')
-        customer_id = subscription_obj.get('customer')
-        
-        print(f"Subscription {subscription_id} deleted for user: {user_id}, plan: {plan_name}")
-
-        if user_id and subscription_id and plan_name:
-            if plan_name not in ["starter", "developer"]:
-                print(f"Error: Invalid plan_name '{plan_name}' from subscription metadata for user {user_id}, subscription {subscription_id}.")
-            else:
-                user_data = await UserService.get_user_data(user_id)
-                existing_customer_id = None
-                if user_data and user_data.get("subscription"):
-                    existing_customer_id = user_data.get("subscription", {}).get("customer_id")
-                final_customer_id = customer_id or existing_customer_id
-                
-                await UserService.update_user_subscription_details(
-                    user_id, 
-                    subscription_id, 
-                    "cancelled", 
-                    plan_name, 
-                    final_customer_id
-                )
-        else:
-            print(f"Error: Missing user_id, subscription_id, or plan_name in customer.subscription.deleted for subscription {subscription_id}")
-
-    elif event['type'] == 'customer.subscription.updated':
-        subscription_obj = event['data']['object']
-        status = subscription_obj.get('status')
-
-        # Case 1: The user has scheduled the subscription to cancel at the end of the period.
-        if subscription_obj.get('cancel_at_period_end') is True:
-            print(f"Subscription {subscription_obj.get('id')} is scheduled to cancel at period end.")
-            pass
-
-        # Case 2: The subscription has been officially cancelled or expired.
-        elif status in ['canceled', 'incomplete_expired']:
+        elif event['type'] == 'customer.subscription.deleted':
+            subscription_obj = event['data']['object']
             metadata = subscription_obj.get('metadata', {})
             user_id = metadata.get('user_id')
             plan_name = metadata.get('plan_name')
             subscription_id = subscription_obj.get('id')
             customer_id = subscription_obj.get('customer')
-
-            print(f"Subscription {subscription_id} for user {user_id} of plan {plan_name} has been cancelled or expired. Status: {status}")
+            
+            print(f"Subscription {subscription_id} deleted for user: {user_id}, plan: {plan_name}")
 
             if user_id and subscription_id and plan_name:
                 if plan_name not in ["starter", "developer"]:
@@ -208,12 +175,51 @@ async def handle_stripe_webhook(request: Request, stripe_signature: Optional[str
                         final_customer_id
                     )
             else:
-                print(f"Error: Missing user_id, subscription_id, or plan_name in customer.subscription.updated for subscription {subscription_id}")
-        
-        else:
-            print(f"Unhandled subscription update for {subscription_obj.get('id')}. Status: {status}")
-        
-    else:
-        print(f"Unhandled event type {event['type']}")
+                print(f"Error: Missing user_id, subscription_id, or plan_name in customer.subscription.deleted for subscription {subscription_id}")
 
-    return {"status": "success"}
+        elif event['type'] == 'customer.subscription.updated':
+            subscription_obj = event['data']['object']
+            status = subscription_obj.get('status')
+
+            # Case 1: The user has scheduled the subscription to cancel at the end of the period.
+            if subscription_obj.get('cancel_at_period_end') is True:
+                print(f"Subscription {subscription_obj.get('id')} is scheduled to cancel at period end.")
+                pass
+
+            # Case 2: The subscription has been officially cancelled or expired.
+            elif status in ['canceled', 'incomplete_expired']:
+                metadata = subscription_obj.get('metadata', {})
+                user_id = metadata.get('user_id')
+                plan_name = metadata.get('plan_name')
+                subscription_id = subscription_obj.get('id')
+                customer_id = subscription_obj.get('customer')
+
+                print(f"Subscription {subscription_id} for user {user_id} of plan {plan_name} has been cancelled or expired. Status: {status}")
+
+                if user_id and subscription_id and plan_name:
+                    if plan_name not in ["starter", "developer"]:
+                        print(f"Error: Invalid plan_name '{plan_name}' from subscription metadata for user {user_id}, subscription {subscription_id}.")
+                    else:
+                        user_data = await UserService.get_user_data(user_id)
+                        existing_customer_id = None
+                        if user_data and user_data.get("subscription"):
+                            existing_customer_id = user_data.get("subscription", {}).get("customer_id")
+                        final_customer_id = customer_id or existing_customer_id
+                        
+                        await UserService.update_user_subscription_details(
+                            user_id, 
+                            subscription_id, 
+                            "cancelled", 
+                            plan_name, 
+                            final_customer_id
+                        )
+                else:
+                    print(f"Error: Missing user_id, subscription_id, or plan_name in customer.subscription.updated for subscription {subscription_id}")
+            
+            else:
+                print(f"Unhandled subscription update for {subscription_obj.get('id')}. Status: {status}")
+            
+        else:
+            print(f"Unhandled event type {event['type']}")
+
+        return {"status": "success"}
