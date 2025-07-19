@@ -380,163 +380,275 @@ class AnalysisService:
         migrated_items = []
         
         for item in result["analysis_items"]:
-            # Ensure camelCase conversion for IDs
-            if item.get("id") == "ai_presence":
-                item["id"] = "aiPresence"
-            elif item.get("id") == "competitor_landscape":
-                item["id"] = "competitorLandscape"
-            elif item.get("id") == "strategy_review":
-                item["id"] = "strategyReview"
-            
-            # Handle AI Presence migration
-            if item.get("id") == "aiPresence":
-                # Ensure the result has a score field at the root level
-                if "result" in item and "score" not in item.get("result", {}):
-                    item["result"]["score"] = item.get("score", 0.0)
-                migrated_items.append(item)
+            try:
+                # Ensure camelCase conversion for IDs
+                if item.get("id") == "ai_presence":
+                    item["id"] = "aiPresence"
+                elif item.get("id") == "competitor_landscape":
+                    item["id"] = "competitorLandscape"
+                elif item.get("id") == "strategy_review":
+                    item["id"] = "strategyReview"
                 
-            # Handle Competitor Landscape migration  
-            elif item.get("id") == "competitorLandscape":
-                # Ensure each LLM result has the required fields
-                if "result" in item:
-                    for llm_name in ["openai", "anthropic", "gemini", "perplexity"]:
-                        if llm_name in item["result"] and item["result"][llm_name]:
-                            llm_result = item["result"][llm_name]
-                            # Add missing fields if they don't exist
-                            if "competitors" not in llm_result:
-                                llm_result["competitors"] = []
-                            if "included" not in llm_result:
-                                llm_result["included"] = False
-                migrated_items.append(item)
+                # Handle AI Presence migration
+                if item.get("id") == "aiPresence":
+                    if "result" in item:
+                        # Ensure the result has a score field at the root level
+                        if "score" not in item.get("result", {}):
+                            item["result"]["score"] = item.get("score", 0.0)
+                        
+                        # Handle old flat provider structure vs new nested structure
+                        result_data = item["result"]
+                        for provider in ["openai", "anthropic", "gemini", "perplexity"]:
+                            if provider in result_data and isinstance(result_data[provider], dict):
+                                provider_data = result_data[provider]
+                                
+                                # Check if this is old flat structure (has direct fields like name, product, industry)
+                                if any(key in provider_data for key in ["name", "product", "industry", "uncertainty"]) and "score" not in provider_data:
+                                    # Old flat structure - migrate to new nested structure
+                                    # Create default nested structure for this provider
+                                    result_data[provider] = {
+                                        "score": 0.0,
+                                        # Add default model results (we can't reconstruct the original model results)
+                                    }
+                                elif isinstance(provider_data, dict) and "score" not in provider_data:
+                                    # Add missing score field
+                                    provider_data["score"] = 0.0
+                    migrated_items.append(item)
+                    
+                # Handle Competitor Landscape migration  
+                elif item.get("id") == "competitorLandscape":
+                    if "result" in item:
+                        result_data = item["result"]
+                        
+                        # Ensure root-level score exists
+                        if "score" not in result_data:
+                            result_data["score"] = item.get("score", 0.0)
+                        
+                        # Handle each provider
+                        for provider in ["openai", "anthropic", "gemini", "perplexity"]:
+                            if provider in result_data and isinstance(result_data[provider], dict):
+                                provider_data = result_data[provider]
+                                
+                                # Check if this is old flat structure
+                                if "competitors" in provider_data and "score" in provider_data and "included" in provider_data:
+                                    # This looks like old flat structure where provider had direct competitors/score/included
+                                    # Need to migrate to new nested structure with models
+                                    old_competitors = provider_data.get("competitors", [])
+                                    old_score = provider_data.get("score", 0.0)
+                                    old_included = provider_data.get("included", False)
+                                    
+                                    # Create new nested structure with dummy model data
+                                    result_data[provider] = {
+                                        "score": old_score,
+                                        "competitors": [],  # Keep empty for backward compatibility
+                                        "included": False   # Keep false for backward compatibility
+                                    }
+                                elif "score" not in provider_data:
+                                    # Add missing score field
+                                    provider_data["score"] = 0.0
+                                    
+                                # Ensure required fields exist
+                                if "competitors" not in provider_data:
+                                    provider_data["competitors"] = []
+                                if "included" not in provider_data:
+                                    provider_data["included"] = False
+                    migrated_items.append(item)
                 
-            # Handle Strategy Review migration (most complex)
-            elif item.get("id") == "strategyReview":
-                if "result" in item:
-                    old_result = item["result"]
-                    new_result = {}
-                    
-                    # Migrate knowledge_base to web_presence
-                    if "knowledge_base" in old_result:
-                        kb = old_result["knowledge_base"]
-                        new_result["web_presence"] = {
-                            "wikipedia": {
-                                "has_wikipedia_page": kb.get("has_wikipedia_page", False),
-                                "wikipedia_url": kb.get("wikipedia_url"),
-                                "score": kb.get("score", 0.0)
-                            },
-                            "reddit": {
-                                "subreddit": {"label": "Subreddit ownership", "raw_value": False, "score": 0.0},
-                                "members": {"label": "Members", "raw_value": 0, "score": 0.0},
-                                "mention_volume": {"label": "30-day mentions", "raw_value": 0, "score": 0.0},
-                                "engagement": {"label": "Avg karma+replies", "raw_value": 0.0, "score": 0.0},
-                                "recency": {"label": "Latest mention hrs", "raw_value": None, "score": 0.0},
-                                "diversity": {"label": "Unique subreddits", "raw_value": 0, "score": 0.0},
-                                "total_score": 0.0
-                            },
-                            "total_score": kb.get("score", 0.0)
-                        }
-                    elif "web_presence" in old_result:
-                        new_result["web_presence"] = old_result["web_presence"]
+                # Handle Strategy Review migration (most complex)
+                elif item.get("id") == "strategyReview":
+                    if "result" in item:
+                        old_result = item["result"]
+                        
+                        # Check if this is completely wrong data (like competitor data in strategy review)
+                        if all(key in old_result for key in ["openai", "anthropic", "gemini", "perplexity"]) and all(
+                            isinstance(old_result[key], dict) and "competitors" in old_result[key] 
+                            for key in ["openai", "anthropic", "gemini", "perplexity"] 
+                            if old_result[key] is not None
+                        ):
+                            # This looks like competitor data was stored in strategy review - create default structure
+                            new_result = AnalysisService._create_default_strategy_result()
+                        else:
+                            new_result = {}
+                            
+                            # Migrate knowledge_base to web_presence (camelCase for API)
+                            if "knowledge_base" in old_result:
+                                kb = old_result["knowledge_base"]
+                                new_result["webPresence"] = {
+                                    "wikipedia": {
+                                        "has_wikipedia_page": kb.get("has_wikipedia_page", False),
+                                        "wikipedia_url": kb.get("wikipedia_url"),
+                                        "score": kb.get("score", 0.0)
+                                    },
+                                    "reddit": {
+                                        "subreddit": {"label": "Subreddit ownership", "raw_value": False, "score": 0.0},
+                                        "members": {"label": "Members", "raw_value": 0, "score": 0.0},
+                                        "mention_volume": {"label": "30-day mentions", "raw_value": 0, "score": 0.0},
+                                        "engagement": {"label": "Avg karma+replies", "raw_value": 0.0, "score": 0.0},
+                                        "recency": {"label": "Latest mention hrs", "raw_value": None, "score": 0.0},
+                                        "diversity": {"label": "Unique subreddits", "raw_value": 0, "score": 0.0},
+                                        "total_score": 0.0
+                                    },
+                                    "total_score": kb.get("score", 0.0)
+                                }
+                            elif "web_presence" in old_result:
+                                new_result["webPresence"] = old_result["web_presence"]
+                            elif "webPresence" in old_result:
+                                new_result["webPresence"] = old_result["webPresence"]
+                            else:
+                                new_result["webPresence"] = AnalysisService._create_default_web_presence()
+                            
+                            # Handle answerability
+                            if "answerability" in old_result:
+                                new_result["answerability"] = old_result["answerability"]
+                            else:
+                                new_result["answerability"] = AnalysisService._create_default_answerability()
+                            
+                            # Handle structured_data -> structuredData
+                            if "structured_data" in old_result:
+                                structured_data = old_result["structured_data"].copy()
+                                if "specific_schemas" in structured_data:
+                                    old_specific = structured_data["specific_schemas"]
+                                    new_specific = {
+                                        "faq_page": old_specific.get("FAQPage", old_specific.get("faq_page", False)),
+                                        "article": old_specific.get("Article", old_specific.get("article", False)),
+                                        "review": old_specific.get("Review", old_specific.get("review", False))
+                                    }
+                                    structured_data["specific_schemas"] = new_specific
+                                new_result["structuredData"] = structured_data
+                            elif "structuredData" in old_result:
+                                new_result["structuredData"] = old_result["structuredData"]
+                            else:
+                                new_result["structuredData"] = AnalysisService._create_default_structured_data()
+                            
+                            # Handle ai_crawler_accessibility -> aiCrawlerAccessibility
+                            if "ai_crawler_accessibility" in old_result:
+                                new_result["aiCrawlerAccessibility"] = old_result["ai_crawler_accessibility"]
+                            elif "aiCrawlerAccessibility" in old_result:
+                                new_result["aiCrawlerAccessibility"] = old_result["aiCrawlerAccessibility"]
+                            else:
+                                new_result["aiCrawlerAccessibility"] = AnalysisService._create_default_ai_crawler_accessibility()
+                        
+                        # Update the item with the new result structure
+                        item["result"] = new_result
                     else:
-                        # Create default web_presence
-                        new_result["web_presence"] = {
-                            "wikipedia": {
-                                "has_wikipedia_page": False,
-                                "wikipedia_url": None,
-                                "score": 0.0
-                            },
-                            "reddit": {
-                                "subreddit": {"label": "Subreddit ownership", "raw_value": False, "score": 0.0},
-                                "members": {"label": "Members", "raw_value": 0, "score": 0.0},
-                                "mention_volume": {"label": "30-day mentions", "raw_value": 0, "score": 0.0},
-                                "engagement": {"label": "Avg karma+replies", "raw_value": 0.0, "score": 0.0},
-                                "recency": {"label": "Latest mention hrs", "raw_value": None, "score": 0.0},
-                                "diversity": {"label": "Unique subreddits", "raw_value": 0, "score": 0.0},
-                                "total_score": 0.0
-                            },
-                            "total_score": 0.0
-                        }
+                        # No result data - create completely default structure
+                        item["result"] = AnalysisService._create_default_strategy_result()
                     
-                    # Add missing fields with defaults if they don't exist
-                    if "answerability" not in old_result:
-                        new_result["answerability"] = {
-                            "total_phrases": 0,
-                            "is_good_length_phrase": 0,
-                            "is_conversational_phrase": 0,
-                            "has_statistics_phrase": 0,
-                            "has_citation_phrase": 0,
-                            "has_citations_section": False,
-                            "score": 0.0
-                        }
-                    else:
-                        new_result["answerability"] = old_result["answerability"]
+                    migrated_items.append(item)
+                else:
+                    # For any other items, keep as-is
+                    migrated_items.append(item)
                     
-                    if "structured_data" not in old_result:
-                        new_result["structured_data"] = {
-                            "schema_markup_present": False,
-                            "schema_types_found": [],
-                            "specific_schemas": {
-                                "faq_page": False,
-                                "article": False,
-                                "review": False
-                            },
-                            "semantic_elements": {
-                                "present": False,
-                                "unique_types_found": [],
-                                "count_unique_types": 0,
-                                "all_tags_count": 0,
-                                "semantic_tags_count": 0,
-                                "non_semantic_tags_count": 0,
-                                "semantic_ratio": 0.0
-                            },
-                            "score": 0.0
-                        }
-                    else:
-                        # Handle potential old specific_schemas format
-                        structured_data = old_result["structured_data"].copy()
-                        if "specific_schemas" in structured_data:
-                            old_specific = structured_data["specific_schemas"]
-                            # Map old field names to new field names
-                            new_specific = {
-                                "faq_page": old_specific.get("FAQPage", old_specific.get("faq_page", False)),
-                                "article": old_specific.get("Article", old_specific.get("article", False)),
-                                "review": old_specific.get("Review", old_specific.get("review", False))
-                            }
-                            structured_data["specific_schemas"] = new_specific
-                        new_result["structured_data"] = structured_data
-                    
-                    if "ai_crawler_accessibility" not in old_result:
-                        new_result["ai_crawler_accessibility"] = {
-                            "sitemap_found": False,
-                            "robots_txt_found": False,
-                            "llms_txt_found": False,
-                            "llm_txt_found": False,
-                            "pre_rendered_content": {
-                                "likely_pre_rendered": False,
-                                "text_length": 0,
-                                "js_framework_hint": False
-                            },
-                            "language": {
-                                "detected_languages": ["en"],
-                                "is_english": False,
-                                "english_version_url": None
-                            },
-                            "score": 0.0
-                        }
-                    else:
-                        new_result["ai_crawler_accessibility"] = old_result["ai_crawler_accessibility"]
-                    
-                    # Update the item with the new result structure
-                    item["result"] = new_result
+            except Exception as e:
+                # If migration fails for any item, create a safe default
+                print(f"Migration failed for item {item.get('id', 'unknown')}: {str(e)}")
                 
-                migrated_items.append(item)
-            else:
-                # For any other items, keep as-is
+                if item.get("id") == "aiPresence":
+                    item["result"] = {"score": item.get("score", 0.0)}
+                elif item.get("id") == "competitorLandscape":
+                    item["result"] = {
+                        "score": item.get("score", 0.0),
+                        "openai": {"score": 0.0, "competitors": [], "included": False},
+                        "anthropic": {"score": 0.0, "competitors": [], "included": False},
+                        "gemini": {"score": 0.0, "competitors": [], "included": False},
+                        "perplexity": {"score": 0.0, "competitors": [], "included": False}
+                    }
+                elif item.get("id") == "strategyReview":
+                    item["result"] = AnalysisService._create_default_strategy_result()
+                
                 migrated_items.append(item)
         
         # Update the result with migrated items
         result["analysis_items"] = migrated_items
         return result
+    
+    @staticmethod
+    def _create_default_strategy_result() -> dict:
+        """Create a default strategy review result structure."""
+        return {
+            "webPresence": AnalysisService._create_default_web_presence(),
+            "answerability": AnalysisService._create_default_answerability(),
+            "structuredData": AnalysisService._create_default_structured_data(),
+            "aiCrawlerAccessibility": AnalysisService._create_default_ai_crawler_accessibility()
+        }
+    
+    @staticmethod
+    def _create_default_web_presence() -> dict:
+        """Create a default web presence structure."""
+        return {
+            "wikipedia": {
+                "has_wikipedia_page": False,
+                "wikipedia_url": None,
+                "score": 0.0
+            },
+            "reddit": {
+                "subreddit": {"label": "Subreddit ownership", "raw_value": False, "score": 0.0},
+                "members": {"label": "Members", "raw_value": 0, "score": 0.0},
+                "mention_volume": {"label": "30-day mentions", "raw_value": 0, "score": 0.0},
+                "engagement": {"label": "Avg karma+replies", "raw_value": 0.0, "score": 0.0},
+                "recency": {"label": "Latest mention hrs", "raw_value": None, "score": 0.0},
+                "diversity": {"label": "Unique subreddits", "raw_value": 0, "score": 0.0},
+                "total_score": 0.0
+            },
+            "total_score": 0.0
+        }
+    
+    @staticmethod
+    def _create_default_answerability() -> dict:
+        """Create a default answerability structure."""
+        return {
+            "total_phrases": 0,
+            "is_good_length_phrase": 0,
+            "is_conversational_phrase": 0,
+            "has_statistics_phrase": 0,
+            "has_citation_phrase": 0,
+            "has_citations_section": False,
+            "score": 0.0
+        }
+    
+    @staticmethod
+    def _create_default_structured_data() -> dict:
+        """Create a default structured data structure."""
+        return {
+            "schema_markup_present": False,
+            "schema_types_found": [],
+            "specific_schemas": {
+                "faq_page": False,
+                "article": False,
+                "review": False
+            },
+            "semantic_elements": {
+                "present": False,
+                "unique_types_found": [],
+                "count_unique_types": 0,
+                "all_tags_count": 0,
+                "semantic_tags_count": 0,
+                "non_semantic_tags_count": 0,
+                "semantic_ratio": 0.0
+            },
+            "score": 0.0
+        }
+    
+    @staticmethod
+    def _create_default_ai_crawler_accessibility() -> dict:
+        """Create a default AI crawler accessibility structure."""
+        return {
+            "sitemap_found": False,
+            "robots_txt_found": False,
+            "llms_txt_found": False,
+            "llm_txt_found": False,
+            "pre_rendered_content": {
+                "likely_pre_rendered": False,
+                "text_length": 0,
+                "js_framework_hint": False
+            },
+            "language": {
+                "detected_languages": ["en"],
+                "is_english": False,
+                "english_version_url": None
+            },
+            "score": 0.0
+        }
 
     @staticmethod
     async def get_job_status(job_id: str, user_id: str) -> Dict[str, Any]:
